@@ -1,199 +1,312 @@
-# karnelboostSh-pour-l-option-noyau
-NametronSh - System Suite v4.0.0 Professional Edition | 2000 lignes bash pur, 16 modules, Dashboard + API REST, par Aissa Mohammedi (DGK)
-# ⚡ NametronSh — System Suite v4.0.0
-
-> **16 modules pros. 2000+ lignes bash pur. Logger, locking, dashboard temps réel + API REST.**
-> **Zéro dépendance. Multi-distro. Dry-run. Par Aissa Mohammedi (DGK)**
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-4.0.0-?style=for-the-badge)
-![Bash](https://img.shields.io/badge/bash-4.0%2B-?style=for-the-badge)
-![License](https://img.shields.io/badge/license-NEXUS--OPEN--2.0-?style=for-the-badge)
-![Modules](https://img.shields.io/badge/modules-16-?style=for-the-badge)
-![Lines](https://img.shields.io/badge/lines-2000%2B-?style=for-the-badge)
+# ⚡ NametronSh — System Suite
 
+### v4.0.0 · Professional Edition
 
-╔═══════════════════════════════════════════╗
-║ ███╗ ██╗███████╗██╗ ██╗██╗ ██╗███████╗ ║
-║ ████╗ ██║██╔════╝╚██╗██╔╝██║ ██║██╔════╝ ║
-║ ██╔██╗ ██║█████╗ ╚███╔╝ ██║ ██║███████╗ ║
-║ NametronSh — Code Nametron 3 Lara ║
-╚═══════════════════════════════════════════╝
+**16 modules · Bash · Dashboard web · API REST**
 
+![Version](https://img.shields.io/badge/version-4.0.0-00d9ff?style=for-the-badge)
+![Bash](https://img.shields.io/badge/Bash-4%2B-4eaa25?style=for-the-badge&logo=gnubash&logoColor=white)
+![Modules](https://img.shields.io/badge/modules-16-ff00e6?style=for-the-badge)
+![Licence](https://img.shields.io/badge/licence-NEXUS--OPEN--2.0-ffb000?style=for-the-badge)
 
-**[🚀 Installer](#-installation-5-secondes) • [🖥️ Menu](#️-menu-interactif) • [🌐 Dashboard](#-dashboard-web) • [📊 Benchmarks](#-benchmarks-avantaprès)**
+*Mesure · Audite · Nettoie · Surveille*
+
+[Installation](#installation) ·
+[Menu](#menu-interactif) ·
+[Commandes](#commandes-cli) ·
+[Dashboard](#dashboard-web) ·
+[Sécurité](#sécurité)
 
 </div>
 
 ---
 
-### 🎯 C'est quoi NametronSh?
+<a id="presentation"></a>
+## 🎯 Présentation
 
-Un seul fichier `nexus_suite.sh` qui remplace 10 outils:
-`neofetch + htop + ncdu + bleachbit + lynis + netdata + stacer`
+**NametronSh** est une suite d’administration système pilotée depuis un seul
+script : `nexus_suite.sh`.
 
-Et en **version PRO**:
-- ✅ Parser CLI robuste `getopt`
-- ✅ Logger avec rotation 14j + niveaux
-- ✅ Locking anti double exécution
-- ✅ Gestion signaux SIGINT/SIGTERM
-- ✅ Config JSON + State
-- ✅ Plugin loader
-- ✅ Dry-run partout
+Elle regroupe des fonctions de benchmark, d’audit, de nettoyage, de sauvegarde,
+de rapport et de consultation du système. Le projet annonce également un
+dashboard web avec API REST.
 
-### 🚀 Installation 5 secondes
+> Les fonctionnalités disponibles dépendent de la version réelle du script.
+> Consulte les commandes et options implémentées avant de les utiliser.
+
+### Fonctionnalités annoncées
+
+- Menu interactif et interface en ligne de commande
+- Benchmark CPU, mémoire et disque
+- Audit de paramètres système
+- Nettoyage avec mode simulation
+- Informations sur le noyau, les services, le réseau et le matériel
+- Sauvegardes et rapports JSON
+- Journaux, fichiers d’état et configuration
+- Dashboard web et API REST
+
+---
+
+<a id="installation"></a>
+## 🚀 Installation
+
+Remplace `VOTRE_NOM` par le nom de ton compte GitHub :
 
 ```bash
-# Clone
-git clone https://github.com/ton-user/NametronSh.git
+git clone https://github.com/VOTRE_NOM/NametronSh.git
 cd NametronSh
 chmod +x nexus_suite.sh
 ./nexus_suite.sh
+```
 
-# One-liner
-curl -fsSL https://raw.githubusercontent.com/ton-user/NametronSh/main/nexus_suite.sh | bash
+Le lancement sans argument ouvre le menu interactif, si cette fonction est
+présente dans la version du script.
 
-🖥️ Menu Interactif
+### Prérequis
 
-Lance sans argument → menu pro:
+- Linux
+- Bash 4 ou plus récent
+- Python 3 si le dashboard ou ses outils associés en ont besoin
 
-Que veux-tu faire?
+<details>
+<summary>🔎 Vérifier les versions installées</summary>
 
-[1] ⚡ Tout optimiser (benchmark → backup → clean → kernel → report)
+```bash
+bash --version
+python3 --version
+```
+
+</details>
+
+---
+
+<a id="menu-interactif"></a>
+## 🖥️ Menu interactif
+
+Lance le script sans argument :
+
+```bash
+./nexus_suite.sh
+```
+
+Le menu annoncé permet d’accéder aux fonctions suivantes :
+
+```text
+[1] ⚡ Tout optimiser
 [2] 📊 Benchmark complet
 [3] 🧹 Nettoyer le disque
 [4] ⚙️ Optimiser le noyau
-[5] 🔒 Audit sécurité (score /100)
-[6] 🔍 Audit services
+[5] 🔒 Audit sécurité
+[6] 🔍 Audit des services
 [7] 🌐 Analyse réseau
 [8] 🖥️ Détection matérielle
-[9] 💾 Backup configurations
-📄 Générer rapport JSON
-🌐 Lancer le Dashboard Web
-🔧 Installer auto-démarrage
-📋 Voir le bilan final
+[9] 💾 Sauvegarde des configurations
+    📄 Générer un rapport JSON
+    🌐 Lancer le dashboard web
+    🔧 Installer le démarrage automatique
+    📋 Voir le bilan final
 [0] ❌ Quitter
+```
 
-⚡ CLI Direct (pour les pros)
+Les choix du menu doivent correspondre aux options réellement disponibles dans
+`nexus_suite.sh`.
 
-./nexus_suite.sh bench # Benchmark CPU/RAM/DISK
-./nexus_suite.sh audit # Audit sécurité
-./nexus_suite.sh clean # Nettoyage intelligent
-./nexus_suite.sh kernel # Opti noyau
-./nexus_suite.sh services # Services
-./nexus_suite.sh network # Réseau
-./nexus_suite.sh hardware # Hardware
-./nexus_suite.sh backup # Backup
-./nexus_suite.sh report # Rapport JSON
-./nexus_suite.sh web # Dashboard
-./nexus_suite.sh all # TOUT FAIRE
+---
 
-# Flags
-./nexus_suite.sh --dry-run clean # Simule
-./nexus_suite.sh --verbose audit # Debug
-./nexus_suite.sh --json report # Sortie JSON
-./nexus_suite.sh --port 8080 web # Port custom
-./nexus_suite.sh --no-browser web # Sans navigateur
+<a id="commandes-cli"></a>
+## ⚡ Commandes CLI
 
-📊 Benchmarks Avant/Après
+```bash
+./nexus_suite.sh bench       # Benchmark CPU, mémoire et disque
+./nexus_suite.sh audit       # Audit de sécurité
+./nexus_suite.sh clean       # Nettoyage
+./nexus_suite.sh kernel      # Réglages du noyau
+./nexus_suite.sh services    # Informations sur les services
+./nexus_suite.sh network     # Informations réseau
+./nexus_suite.sh hardware    # Informations matérielles
+./nexus_suite.sh backup      # Sauvegarde
+./nexus_suite.sh report      # Rapport JSON
+./nexus_suite.sh web         # Dashboard web
+./nexus_suite.sh all         # Exécution de toutes les actions prévues
+```
 
-NametronSh mesure tout:
+### Options
 
-📊 BENCHMARK — ÉTAT INITIAL
-RAM utilisée: 42.3%
-Disque utilisé: 68%
-Load average: 1.2
+```bash
+./nexus_suite.sh --dry-run clean       # Simuler le nettoyage
+./nexus_suite.sh --verbose audit       # Afficher plus de détails
+./nexus_suite.sh --json report         # Demander une sortie JSON
+./nexus_suite.sh --port 8080 web       # Choisir le port du dashboard
+./nexus_suite.sh --no-browser web      # Ne pas ouvrir le navigateur
+```
 
-⚡ BENCHMARK CPU
-Test calcul intensif (100k itérations): 0.42s
-Écriture 100 Mo: 0.8s
-Lecture 100 Mo: 0.3s
+> Utilise `--dry-run` avant une opération qui pourrait modifier ton système.
 
-📈 GAINS MESURÉS
-RAM: 42.3% → 28.1% (gain: 14.2 pts)
-Disque: 68% → 52% (gain: 16 pts)
-Durée: 12s
+---
 
-🔒 Audit Sécurité — Score /100
+<a id="benchmarks"></a>
+## 📊 Benchmarks
 
+La commande `bench` peut afficher des mesures de mémoire, d’espace disque, de
+charge système et des tests de lecture ou d’écriture.
+
+```text
+Exemple de résultats — les valeurs varient selon la machine
+
+RAM utilisée :                 42.3 %
+Disque utilisé :               68 %
+Load average :                 1.2
+Test de calcul CPU :           0.42 s
+Écriture de 100 Mo :           0.8 s
+Lecture de 100 Mo :            0.3 s
+```
+
+Les chiffres ci-dessus sont illustratifs. Les résultats dépendent notamment
+du matériel, du système, de la charge et de l’espace disponible. Un nettoyage
+ne garantit pas une baisse de l’utilisation de la mémoire ou du disque.
+
+---
+
+<a id="audit"></a>
+## 🔒 Audit de sécurité
+
+```bash
 ./nexus_suite.sh audit
+```
 
-Vérifie:
-- Users sans mot de passe
-- SSH PermitRootLogin
-- Firewall UFW/firewalld
-- Paquets à mettre à jour
-- Ports en écoute
-→ Score final /100 + problèmes détectés
+Les vérifications annoncées peuvent porter sur des paramètres comme la
+connexion SSH root, le pare-feu, les mises à jour et les ports en écoute.
 
-🌐 Dashboard Web Temps Réel
+Un score sur 100 est un indicateur fourni par l’outil, pas une certification
+ni une garantie que le système est sécurisé. Examine les résultats avant
+d’entreprendre une modification.
 
+---
+
+<a id="dashboard-web"></a>
+## 🌐 Dashboard web
+
+Lancement annoncé :
+
+```bash
 ./nexus_suite.sh web
-# → http://localhost:9999/
+```
 
-*Features:*
-- 4 stats live: RAM, Disque, CPU Load, Uptime + progress bars
-- 10 boutons actions rapides
-- Console live colorée
-- Raccourcis: `1-9` Actions, `R` Refresh
-- Auto-refresh 3s
+Adresse locale par défaut :
 
-*API REST:*
+```text
+http://localhost:9999/
+```
 
-Endpoint Description
-`GET /` Dashboard HTML
-`GET /api/stats` RAM/disk/cpu/uptime/hostname
-`GET /api/action?cmd=audit` Lance action
-`GET /health` Healthcheck
-`GET /api/version` Version
+Fonctionnalités annoncées :
 
-📁 Structure Générée
+- Affichage des statistiques système
+- Barres de progression
+- Console d’activité
+- Raccourcis clavier
+- Actualisation périodique
 
-~/Documents/nexus_suite/
-├── logs/nexus_suite_20261011.log (rotation 14j)
-├── reports/rapport_*.json
-├── backups/backup_*/MANIFEST.txt
-├── config/config.json
-├── cache/
-├── plugins/ (loader prêt)
-├── state/nexus.lock + state.json
+### API REST annoncée
+
+| Endpoint | Description |
+|---|---|
+| `GET /` | Page du dashboard |
+| `GET /api/stats` | Statistiques système |
+| `GET /api/action?cmd=audit` | Déclenchement d’une action |
+| `GET /health` | Vérification de disponibilité |
+| `GET /api/version` | Version du service |
+
+### ⚠️ Sécuriser le dashboard
+
+La configuration d’exemple indique `auth_required: false`. Ne rends pas le
+dashboard accessible depuis Internet ou un réseau partagé avec ce réglage.
+
+L’endpoint `/api/action` peut lancer des commandes. Pour un déploiement réel,
+protège l’accès et privilégie une méthode HTTP `POST` pour déclencher des
+actions. Ne publie jamais de vrai token dans le dépôt.
+
+---
+
+<a id="fichiers-generes"></a>
+## 📁 Fichiers générés
+
+Le script annonce l’utilisation du répertoire `~/Documents/nexus_suite/` :
+
+```text
+nexus_suite/
+├── logs/       # Journaux
+├── reports/    # Rapports JSON
+├── backups/    # Sauvegardes et manifestes
+├── config/     # Configuration
+├── cache/      # Fichiers temporaires
+├── plugins/    # Extensions
+├── state/      # État et verrouillage
 ├── dashboard.html
 └── server.py
+```
 
-⚙️ Config JSON
+La structure exacte et la durée de conservation des journaux dépendent du
+comportement réel du script.
 
-`~/Documents/nexus_suite/config/config.json`:
+---
 
+<a id="configuration"></a>
+## ⚙️ Configuration
+
+Exemple de structure JSON :
+
+```json
 {
-"port": 9999,
-"token": "nexus-dgk-2026",
-"options": {
-"backup_before_clean": true,
-"log_level": "info",
-"auth_required": false
-},
-"kernel": {
-"swappiness": 10,
-"vfs_cache_pressure": 50
+  "port": 9999,
+  "token": "REMPLACER_PAR_UN_TOKEN_LOCAL",
+  "options": {
+    "backup_before_clean": true,
+    "log_level": "info",
+    "auth_required": false
+  },
+  "kernel": {
+    "swappiness": 10,
+    "vfs_cache_pressure": 50
+  }
 }
-}
+```
 
-🏆 Pourquoi NametronSh impressionne?
-
-- *Junior* → "Wtf c'est un OS dans http://un.sh?!"
-- *Senior DevOps* → "Logger pro, locking, trap, getopt, dry-run... c'est du code prod"
-- *CTO* → "2000 lignes bash qui remplacent toute une stack monitoring"
-
-📄 Licence
-
-*NEXUS-OPEN-2.0* — Par *Aissa Mohammedi (DGK)* — Code Nametron 3 Lara
-Québec 2026 — Build `a7f3c9e1b2d4`
+Ne réutilise pas ce token d’exemple. Vérifie dans le code comment le champ
+`auth_required` est appliqué avant de lancer le dashboard.
 
 ---
+
+<a id="securite"></a>
+## 🛡️ Utilisation responsable
+
+Utilise NametronSh uniquement sur des machines que tu possèdes ou que tu es
+autorisé à administrer.
+
+- Lis le code avant de l’exécuter.
+- Commence en mode `--dry-run` lorsqu’il est disponible.
+- Fais une sauvegarde avant de modifier le système.
+- Ne lance pas de commandes en tant que superutilisateur sans comprendre
+  leurs effets.
+- Ne publie pas de secrets, tokens ou données de configuration sensibles.
+
+---
+
+<a id="licence"></a>
+## 📄 Licence et crédits
+
+**Auteur :** Aissa Mohammedi (DGK)  
+**Licence annoncée :** NEXUS-OPEN-2.0
+
+Ajoute le texte complet de la licence dans un fichier `LICENSE` à la racine du
+dépôt afin que les conditions d’utilisation soient claires.
+
 <div align="center">
-<strong>⭐ Star si tu kiffes NametronSh — Forge avec nous NEXUUR-CA/US/EU/ASIA</strong>
+
+**⭐ Si le projet t’est utile, tu peux lui donner une étoile sur GitHub.**
+
+*NametronSh — administration système avec prudence et transparence.*
+
 </div>
-
-
----
