@@ -1,0 +1,256 @@
+#!/bin/bash# NEXUS DEEP CLEAN — cible 30 GB libérés
+# Tue les caches système + utilisateur + logs + snapshots + vieux kernels
+
+G='\033[92m'; R='\033[91m'; Y='\033[93m'; C='\033[96m'; W='\033[1m'; N='\033[0m'
+ok() { printf "${G}✓${N} %s\n" "$1"; }
+warn() { printf "${Y}!${N} %s\n" "$1"; }
+info() { printf "${C}i${N} %s\n" "$1"; }
+sep() { printf "\n${C}── %s ──${N}\n" "$1"; }
+
+BEFORE=$(df --output=avail / | tail -1)
+BEFORE_H=$(df -h / | tail -1 | awk '{print $4}')
+
+echo ""
+echo -e "${W}╔════════════════════════════════════════╗${N}"
+echo -e "${W}║ NEXUS DEEP CLEAN — Objectif 30 GB ║${N}"
+echo -e "${W}╚════════════════════════════════════════╝${N}"
+echo ""
+echo -e " ${C}Avant :${N} ${W}${BEFORE_H}${N} libre"
+echo ""
+
+read -rp "👉 Lancer le nettoyage profond ? (o/N) : " rep
+[[ ! "$rep" =~ ^[oOyY]$ ]] && exit 0
+
+REAL_HOME="$HOME"
+
+# ═══════════════════════════════════════════════════════════
+# 1. APT + PAQUETS ORPHELINS
+# ═══════════════════════════════════════════════════════════
+sep "1. APT"
+sudo apt clean 2>/dev/null
+sudo apt autoclean 2>/dev/null
+sudo apt autoremove --purge -y 2>/dev/null | tail -2
+sudo rm -rf /var/lib/apt/lists/* 2>/dev/null
+ok "APT nettoyé"
+
+# ═══════════════════════════════════════════════════════════
+# 2. JOURNAL SYSTEMD (limité à 50M)
+# ═══════════════════════════════════════════════════════════
+sep "2. Journal systemd"
+sudo journalctl --vacuum-size=50M 2>/dev/null | tail -1
+sudo journalctl --vacuum-time=1d 2>/dev/null | tail -1
+ok "Journal réduit à 50M"
+
+# ═══════════════════════════════════════════════════════════
+# 3. SNAPSHOTS TIMESHIFT (le plus gros gain)
+# ═══════════════════════════════════════════════════════════
+sep "3. Snapshots Timeshift"
+if command -v timeshift >/dev/null 2>&1; then
+info "Snapshots actuels :"
+sudo timeshift --list 2>/dev/null | grep "^[0-9]" || echo " (aucun)"
+
+COUNT=$(sudo timeshift --list 2>/dev/null | grep -c "^[0-9]" || echo 0)
+if [ "$COUNT" -gt 1 ]; then
+warn "$COUNT snapshots détectés — le 1er est le plus récent"
+warn "Suppression manuelle recommandée :"
+echo " sudo timeshift --list"
+echo " sudo timeshift --delete --snapshot '<nom>'"
+else
+ok "Nombre de snapshots OK"
+fi
+else
+info "Timeshift non installé"
+fi
+
+# ═══════════════════════════════════════════════════════════
+# 4. CACHE UTILISATEUR (LARGE)
+# ═══════════════════════════════════════════════════════════
+sep "4. Cache utilisateur"
+CACHES=(
+"$REAL_HOME/.cache"
+"$REAL_HOME/.thumbnails"
+"$REAL_HOME/.local/share/Trash"
+"$REAL_HOME/.npm/_cacache"
+"$REAL_HOME/.yarn/cache"
+"$REAL_HOME/.pnpm-store"
+"$REAL_HOME/.gradle/caches"
+"$REAL_HOME/.m2/repository"
+"$REAL_HOME/.cargo/registry/cache"
+"$REAL_HOME/go/pkg/mod/cache"
+"$REAL_HOME/.cache/pip"
+"$REAL_HOME/.cache/pypoetry"
+"$REAL_HOME/.local/share/pipx/cache"
+"$REAL_HOME/.config/Code/Cache"
+"$REAL_HOME/.config/Code/CachedData"
+"$REAL_HOME/.config/Code/CachedExtensionVSIXs"
+"$REAL_HOME/.config/Code/Code Cache"
+"$REAL_HOME/.config/Code/User/workspaceStorage"
+"$REAL_HOME/.config/Code/Backups"
+"$REAL_HOME/.config/Code/Crashpad"
+"$REAL_HOME/.config/Code/logs"
+"$REAL_HOME/.config/VSCodium/Cache"
+"$REAL_HOME/.config/VSCodium/CachedData"
+"$REAL_HOME/.config/VSCodium/logs"
+"$REAL_HOME/.cache/JetBrains"
+"$REAL_HOME/.cache/electron"
+"$REAL_HOME/.cache/discord"
+"$REAL_HOME/.cache/slack"
+"$REAL_HOME/.cache/telegram"
+"$REAL_HOME/.cache/thunderbird"
+"$REAL_HOME/.cache/spotify"
+"$REAL_HOME/.cache/flatpak"
+"$REAL_HOME/.cache/gnome-software"
+"$REAL_HOME/.cache/snap"
+"$REAL_HOME/.mozilla/firefox"/*/cache2
+"$REAL_HOME/.mozilla/firefox"/*/startupCache
+"$REAL_HOME/.cache/mozilla"
+"$REAL_HOME/.cache/google-chrome"
+"$REAL_HOME/.cache/chromium"
+"$REAL_HOME/.cache/BraveSoftware"
+"$REAL_HOME/.cache/opera"
+"$REAL_HOME/.cache/vivaldi"
+"$REAL_HOME/.nv"
+)
+
+for path in "${CACHES[@]}"; do
+[ -d "$path" ] || continue
+case "$path" in
+*Documents*|*Pictures*|*Images*|*Videos*|*Vidéos*|*Music*|*Musique*|*Downloads*|*Téléchargements*|*.ssh*|*.gnupg*)
+continue ;;
+esac
+size=$(du -sh "$path" 2>/dev/null | cut -f1)
+rm -rf "$path"/* 2>/dev/null
+rm -rf "$path"/.[!.]* 2>/dev/null
+ok "Nettoyé : $path ($size)"
+done
+
+# ═══════════════════════════════════════════════════════════
+# 5. FLATPAK + SNAP
+# ═══════════════════════════════════════════════════════════
+sep "5. Flatpak & Snap"
+if command -v flatpak >/dev/null 2>&1; then
+flatpak uninstall --unused -y 2>/dev/null | tail -2
+sudo rm -rf /var/tmp/flatpak-cache-* 2>/dev/null
+ok "Flatpak nettoyé"
+fi
+
+if command -v snap >/dev/null 2>&1; then
+snap list --all 2>/dev/null | awk '/disabled/{print $1, $3}' | while read -r name rev; do
+[ -n "$name" ] && sudo snap remove "$name" --revision="$rev" 2>/dev/null
+ok "Snap supprimé : $name"
+done
+fi
+
+# ═══════════════════════════════════════════════════════════
+# 6. DOCKER (souvent 5-15 GB)
+# ═══════════════════════════════════════════════════════════
+sep "6. Docker"
+if command -v docker >/dev/null 2>&1; then
+SIZE_BEFORE=$(sudo docker system df 2>/dev/null | tail -1 | awk '{print $4}')
+info "Taille avant : $SIZE_BEFORE"
+sudo docker system prune -af --volumes 2>/dev/null | tail -3
+SIZE_AFTER=$(sudo docker system df 2>/dev/null | tail -1 | awk '{print $4}')
+ok "Docker après : $SIZE_AFTER"
+else
+info "Docker non installé"
+fi
+
+# ═══════════════════════════════════════════════════════════
+# 7. VIEUX KERNELS
+# ═══════════════════════════════════════════════════════════
+sep "7. Vieux kernels"
+CURRENT=$(uname -r)
+info "Kernel actuel : $CURRENT"
+sudo apt autoremove --purge -y 2>/dev/null | tail -2
+ok "Vieux kernels supprimés"
+
+# ═══════════════════════════════════════════════════════════
+# 8. LOGS SYSTÈME
+# ═══════════════════════════════════════════════════════════
+sep "8. Logs système"
+sudo find /var/log -type f -name "*.gz" -delete 2>/dev/null
+sudo find /var/log -type f -name "*.log" -atime +15 -delete 2>/dev/null
+sudo find /var/log -type f -name "*.[0-9]" -atime +15 -delete 2>/dev/null
+sudo find /var/log/journal -type f -atime +7 -delete 2>/dev/null
+ok "Logs nettoyés"
+
+# ═══════════════════════════════════════════════════════════
+# 9. TEMPORAIRES
+# ═══════════════════════════════════════════════════════════
+sep "9. Fichiers temporaires"
+sudo find /tmp -type f -atime +2 -delete 2>/dev/null
+sudo find /var/tmp -type f -atime +3 -delete 2>/dev/null
+sudo find /tmp -type d -empty -delete 2>/dev/null
+sudo find /var/tmp -type d -empty -delete 2>/dev/null
+ok "Temporaires nettoyés"
+
+# ═══════════════════════════════════════════════════════════
+# 10. CACHE APT GÉANT
+# ═══════════════════════════════════════════════════════════
+sep "10. Cache APT résiduel"
+sudo rm -rf /var/cache/apt/archives/*.deb 2>/dev/null
+sudo rm -rf /var/cache/apt/archives/partial/* 2>/dev/null
+sudo rm -rf /var/cache/debconf/*.dat-old 2>/dev/null
+ok "Cache APT purgé"
+
+# ═══════════════════════════════════════════════════════════
+# 11. CACHE NAVIGATEURS PROFOND
+# ═══════════════════════════════════════════════════════════
+sep "11. Navigateurs (cache profond)"
+for bdir in "$REAL_HOME/.mozilla" "$REAL_HOME/.config/google-chrome" \
+"$REAL_HOME/.config/chromium" "$REAL_HOME/.config/BraveSoftware"; do
+[ -d "$bdir" ] || continue
+find "$bdir" -type d \( -name "Cache" -o -name "cache2" -o -name "Code Cache" \
+-o -name "GPUCache" -o -name "ShaderCache" -o -name "startupCache" \) \
+-exec rm -rf {} + 2>/dev/null
+ok "Cache navigateur : $bdir"
+done
+
+# ═══════════════════════════════════════════════════════════
+# 12. FICHIERS > 100 MB (scan seulement, pas suppression)
+# ═══════════════════════════════════════════════════════════
+sep "12. Gros fichiers (> 500 MB) — pour information"
+info "Ces fichiers NE SONT PAS supprimés. À toi de décider."
+echo ""
+find "$REAL_HOME" -type f -size +500M 2>/dev/null \
+! -path "*/Documents/*" \
+! -path "*/Videos/*" \
+! -path "*/Vidéos/*" \
+! -path "*/Images/*" \
+! -path "*/Pictures/*" \
+| head -20 | while read -r f; do
+sz=$(du -sh "$f" 2>/dev/null | cut -f1)
+echo " $sz $f"
+done
+echo ""
+
+# ═══════════════════════════════════════════════════════════
+# RÉSULTAT
+# ═══════════════════════════════════════════════════════════
+AFTER=$(df --output=avail / | tail -1)
+AFTER_H=$(df -h / | tail -1 | awk '{print $4}')
+GAIN_KB=$(( (AFTER - BEFORE) / 1024 ))
+GAIN_MB=$(( GAIN_KB / 1024 ))
+GAIN_GB=$(awk "BEGIN {printf \"%.2f\", $GAIN_MB / 1024}")
+
+echo ""
+echo -e "${W}╔════════════════════════════════════════╗${N}"
+echo -e "${W}║ RÉSULTAT FINAL ║${N}"
+echo -e "${W}╚════════════════════════════════════════╝${N}"
+echo ""
+echo -e " Avant : ${Y}${BEFORE_H}${N} libre"
+echo -e " Après : ${G}${AFTER_H}${N} libre"
+echo -e " Gain : ${G}${W}${GAIN_MB} MB${N} (${GAIN_GB} GB)"
+echo ""
+df -h / | tail -1
+echo ""
+
+if [ "$GAIN_MB" -ge 30000 ]; then
+echo -e "${G}${W} 🎯 OBJECTIF ATTEINT : ${GAIN_GB} GB libérés${N}"
+elif [ "$GAIN_MB" -ge 10000 ]; then
+echo -e "${G} ✓ ${GAIN_GB} GB libérés${N}"
+else
+echo -e "${Y} ! Seulement ${GAIN_GB} GB libérés${N}"
+echo -e "${Y} Cause probable : snapshots Timeshift ou gros fichiers${N}"
+fi
+echo ""
