@@ -1,0 +1,2178 @@
+#!/bin/bash# ═══════════════════════════════════════════════════════════════════════════
+#
+# ███╗ ██╗███████╗██╗ ██╗██╗ ██╗███████╗
+# ████╗ ██║██╔════╝╚██╗██╔╝██║ ██║██╔════╝
+# ██╔██╗ ██║█████╗ ╚███╔╝ ██║ ██║███████╗
+# ██║╚██╗██║██╔══╝ ██╔██╗ ██║ ██║╚════██║
+# ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║
+# ╚═╝ ╚═══╝╚══════╝╚═╝ ╚═╝ ╚═════╝ ╚══════╝
+#
+# SYSTEM SUITE v4.0.0 — PROFESSIONAL EDITION
+#
+# Auteur : Aissa Mohammedi (DGK)
+# Protocole : Code Nametron 3 Lara
+# Licence : NEXUS-OPEN-2.0
+# Build : 2026-10-11
+#
+# Composants :
+# • Parser CLI robuste (getopt long/short)
+# • Système de configuration JSON
+# • Logger avec rotation + niveaux
+# • Suite de benchmarks (CPU/RAM/DISK/NET)
+# • Diagnostic santé complet
+# • Audit sécurité système
+# • Nettoyage intelligent + rollback
+# • Optimisation noyau
+# • Analyse réseau avancée
+# • Détection matérielle
+# • Backup/Restore configs
+# • Rapport JSON + HTML
+# • Dashboard web temps réel
+# • Mode dry-run
+# • Gestion signaux (SIGINT/SIGTERM)
+# • Multi-distribution (Ubuntu/Debian/Arch/Fedora)
+# • Plugin loader
+#
+# Usage :
+# nexus_suite.sh → Menu interactif
+# nexus_suite.sh --help → Aide complète
+# nexus_suite.sh --version → Version
+# nexus_suite.sh bench → Lancer benchmarks
+# nexus_suite.sh audit → Audit sécurité
+# nexus_suite.sh clean → Nettoyage
+# nexus_suite.sh report → Rapport JSON
+# nexus_suite.sh web → Dashboard web
+# nexus_suite.sh all → Tout faire
+#
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 1 — INITIALISATION & GARDE-FOUS
+# ═══════════════════════════════════════════════════════════════════════════
+
+set -o pipefail
+set -o errtrace
+set +o histexpand
+
+# Version Bash minimale
+if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+echo "ERREUR : Bash 4.0+ requis (actuel : ${BASH_VERSION})"
+exit 1
+fi
+
+# Empêcher exécution en root direct
+if [ "$EUID" -eq 0 ]; then
+echo "ATTENTION : Ce script ne doit pas être lancé en root direct."
+echo "Utilisez sudo quand nécessaire."
+exit 1
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 2 — MÉTADONNÉES & CONSTANTES
+# ═══════════════════════════════════════════════════════════════════════════
+
+readonly SCRIPT_VERSION="4.0.0"
+readonly SCRIPT_NAME="nexus_suite"
+readonly SCRIPT_AUTEUR="Aissa Mohammedi (DGK)"
+readonly SCRIPT_PROTOCOLE="Code Nametron 3 Lara"
+readonly SCRIPT_LICENCE="NEXUS-OPEN-2.0"
+readonly SCRIPT_BUILD="2026-10-11"
+
+readonly SCRIPT_PATH="$(readlink -f "$0")"
+readonly SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+readonly SCRIPT_PID=$$
+
+readonly BASE_DIR="$HOME/Documents/nexus_suite"
+readonly LOG_DIR="$BASE_DIR/logs"
+readonly REPORT_DIR="$BASE_DIR/reports"
+readonly BACKUP_DIR="$BASE_DIR/backups"
+readonly CONFIG_DIR="$BASE_DIR/config"
+readonly CACHE_DIR="$BASE_DIR/cache"
+readonly PLUGIN_DIR="$BASE_DIR/plugins"
+readonly STATE_DIR="$BASE_DIR/state"
+
+readonly CONFIG_FILE="$CONFIG_DIR/config.json"
+readonly STATE_FILE="$STATE_DIR/state.json"
+readonly LOCK_FILE="$STATE_DIR/nexus.lock"
+
+readonly DEFAULT_PORT=9999
+readonly DEFAULT_TOKEN="nexus-dgk-2026"
+readonly MAX_PORT_SCAN=50
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 3 — ÉTAT GLOBAL
+# ═══════════════════════════════════════════════════════════════════════════
+
+DISTRO="unknown"
+DISTRO_FAMILY="unknown"
+SUDO_OK=0
+DRY_RUN=0
+VERBOSE=0
+QUIET=0
+NO_COLOR=0
+JSON_OUTPUT=0
+DASHBOARD_PORT="$DEFAULT_PORT"
+DASHBOARD_TOKEN="$DEFAULT_TOKEN"
+NO_BROWSER=0
+
+declare -a RAPPORT_ERREURS=()
+declare -a RAPPORT_WARNINGS=()
+declare -a RAPPORT_ACTIONS=()
+declare -a MODULES_CHARGES=()
+
+# Compatibilité : niveaux de log
+readonly LOG_LEVEL_DEBUG=10
+readonly LOG_LEVEL_INFO=20
+readonly LOG_LEVEL_WARN=30
+readonly LOG_LEVEL_ERROR=40
+readonly LOG_LEVEL_FATAL=50
+LOG_LEVEL_THRESHOLD=$LOG_LEVEL_INFO
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 4 — DÉTECTION TERMINAL & COULEURS
+# ═══════════════════════════════════════════════════════════════════════════
+
+detecter_couleurs() {
+if [ -t 1 ] && [ "$NO_COLOR" -eq 0 ] && [ -z "${NO_COLOR:-}" ]; then
+readonly C_RESET='\033[0m'
+readonly C_BOLD='\033[1m'
+readonly C_DIM='\033[2m'
+readonly C_ITALIC='\033[3m'
+readonly C_UNDER='\033[4m'
+readonly C_RED='\033[91m'
+readonly C_GREEN='\033[92m'
+readonly C_YELLOW='\033[93m'
+readonly C_BLUE='\033[94m'
+readonly C_MAGENTA='\033[95m'
+readonly C_CYAN='\033[96m'
+readonly C_WHITE='\033[97m'
+readonly C_OR='\033[38;5;179m'
+readonly C_ROSE='\033[38;5;212m'
+else
+readonly C_RESET=''
+readonly C_BOLD=''
+readonly C_DIM=''
+readonly C_ITALIC=''
+readonly C_UNDER=''
+readonly C_RED=''
+readonly C_GREEN=''
+readonly C_YELLOW=''
+readonly C_BLUE=''
+readonly C_MAGENTA=''
+readonly C_CYAN=''
+readonly C_WHITE=''
+readonly C_OR=''
+readonly C_ROSE=''
+fi
+}
+
+detecter_couleurs
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 5 — SYSTÈME DE LOGGING PROFESSIONNEL
+# ═══════════════════════════════════════════════════════════════════════════
+
+LOG_FILE=""
+
+init_logger() {
+mkdir -p "$LOG_DIR" 2>/dev/null
+LOG_FILE="$LOG_DIR/${SCRIPT_NAME}_$(date +%Y%m%d).log"
+touch "$LOG_FILE" 2>/dev/null
+}
+
+_log_raw() {
+local niveau="$1"
+local msg="$2"
+local ts
+ts=$(date '+%Y-%m-%dT%H:%M:%S%z')
+
+if [ -n "$LOG_FILE" ]; then
+printf '[%s] [%-5s] [pid=%s] %s\n' \
+"$ts" "$niveau" "$SCRIPT_PID" "$msg" >> "$LOG_FILE" 2>/dev/null
+fi
+}
+
+_log_console() {
+local niveau="$1"
+local msg="$2"
+local couleur="$3"
+
+if [ "$QUIET" -eq 1 ] && [ "$niveau" != "ERR" ] && [ "$niveau" != "FATAL" ]; then
+return
+fi
+
+if [ "$JSON_OUTPUT" -eq 1 ]; then
+printf '{"ts":"%s","level":"%s","msg":"%s"}\n' \
+"$(date -Iseconds)" "$niveau" "$(escape_json "$msg")"
+else
+printf "${couleur}[%s]${C_RESET} %s\n" "$niveau" "$msg"
+fi
+}
+
+escape_json() {
+local s="$1"
+s="${s//\\/\\\\}"
+s="${s//\"/\\\"}"
+s="${s//$'\n'/\\n}"
+s="${s//$'\r'/\\r}"
+s="${s//$'\t'/\\t}"
+printf '%s' "$s"
+}
+
+log_debug() {
+[ "$LOG_LEVEL_THRESHOLD" -gt "$LOG_LEVEL_DEBUG" ] && return
+_log_raw "DEBUG" "$1"
+[ "$VERBOSE" -eq 1 ] && _log_console "DEBUG" "$1" "$C_DIM"
+}
+
+log_info() {
+[ "$LOG_LEVEL_THRESHOLD" -gt "$LOG_LEVEL_INFO" ] && return
+_log_raw "INFO" "$1"
+_log_console "INFO" "$1" "$C_BLUE"
+}
+
+log_ok() {
+[ "$LOG_LEVEL_THRESHOLD" -gt "$LOG_LEVEL_INFO" ] && return
+_log_raw "OK" "$1"
+_log_console "OK" "$1" "$C_GREEN"
+}
+
+log_warn() {
+[ "$LOG_LEVEL_THRESHOLD" -gt "$LOG_LEVEL_WARN" ] && return
+_log_raw "WARN" "$1"
+_log_console "WARN" "$1" "$C_YELLOW"
+RAPPORT_WARNINGS+=("$1")
+}
+
+log_error() {
+[ "$LOG_LEVEL_THRESHOLD" -gt "$LOG_LEVEL_ERROR" ] && return
+_log_raw "ERR" "$1"
+_log_console "ERR" "$1" "$C_RED"
+RAPPORT_ERREURS+=("$1")
+}
+
+log_fatal() {
+_log_raw "FATAL" "$1"
+_log_console "FATAL" "$1" "$C_RED"
+RAPPORT_ERREURS+=("FATAL: $1")
+exit 1
+}
+
+log_action() {
+RAPPORT_ACTIONS+=("$1")
+_log_raw "ACTION" "$1"
+}
+
+# Rotation logs : garde 14 jours
+rotate_logs() {
+find "$LOG_DIR" -name "${SCRIPT_NAME}_*.log" -mtime +14 -delete 2>/dev/null
+log_debug "Rotation logs terminée"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 6 — GESTION SIGNAUX & CLEANUP
+# ═══════════════════════════════════════════════════════════════════════════
+
+CLEANUP_EN_COURS=0
+
+on_signal_int() {
+[ "$CLEANUP_EN_COURS" -eq 1 ] && return
+CLEANUP_EN_COURS=1
+echo ""
+log_warn "Interruption (SIGINT) — nettoyage..."
+cleanup_global
+exit 130
+}
+
+on_signal_term() {
+[ "$CLEANUP_EN_COURS" -eq 1 ] && return
+CLEANUP_EN_COURS=1
+log_warn "Terminaison (SIGTERM) — nettoyage..."
+cleanup_global
+exit 143
+}
+
+cleanup_global() {
+# Tuer jobs enfants
+local jobs_list
+jobs_list=$(jobs -p 2>/dev/null)
+if [ -n "$jobs_list" ]; then
+echo "$jobs_list" | xargs -r kill 2>/dev/null
+fi
+# Supprimer lock
+[ -f "$LOCK_FILE" ] && rm -f "$LOCK_FILE" 2>/dev/null
+log_debug "Cleanup terminé"
+}
+
+trap on_signal_int INT
+trap on_signal_term TERM
+trap cleanup_global EXIT
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 7 — LOCKING (empêche double exécution)
+# ═══════════════════════════════════════════════════════════════════════════
+
+acquire_lock() {
+mkdir -p "$STATE_DIR" 2>/dev/null
+if [ -f "$LOCK_FILE" ]; then
+local pid_existant
+pid_existant=$(cat "$LOCK_FILE" 2>/dev/null)
+if [ -n "$pid_existant" ] && kill -0 "$pid_existant" 2>/dev/null; then
+log_fatal "Instance déjà active (PID $pid_existant)"
+else
+log_warn "Lock orphelin détecté, suppression"
+rm -f "$LOCK_FILE"
+fi
+fi
+echo "$SCRIPT_PID" > "$LOCK_FILE"
+log_debug "Lock acquis : $LOCK_FILE"
+}
+
+release_lock() {
+[ -f "$LOCK_FILE" ] && rm -f "$LOCK_FILE"
+log_debug "Lock libéré"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 8 — DÉTECTION DISTRIBUTION
+# ═══════════════════════════════════════════════════════════════════════════
+
+detecter_distribution() {
+if [ -f /etc/os-release ]; then
+# shellcheck disable=SC1091
+. /etc/os-release
+DISTRO="${ID:-unknown}"
+DISTRO_VERSION="${VERSION_ID:-unknown}"
+DISTRO_NAME="${PRETTY_NAME:-$DISTRO}"
+else
+DISTRO="unknown"
+DISTRO_NAME="Unknown Linux"
+fi
+
+case "$DISTRO" in
+ubuntu|debian|linuxmint|pop|kali|raspbian)
+DISTRO_FAMILY="debian"
+;;
+arch|manjaro|endeavouros|garuda)
+DISTRO_FAMILY="arch"
+;;
+fedora|rhel|centos|rocky|almalinux)
+DISTRO_FAMILY="redhat"
+;;
+opensuse*|sles)
+DISTRO_FAMILY="suse"
+;;
+alpine)
+DISTRO_FAMILY="alpine"
+;;
+*)
+DISTRO_FAMILY="unknown"
+;;
+esac
+
+log_debug "Distribution : $DISTRO_NAME (family=$DISTRO_FAMILY)"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 9 — VERIFICATIONS SUDO
+# ═══════════════════════════════════════════════════════════════════════════
+
+verifier_sudo() {
+if ! command -v sudo >/dev/null 2>&1; then
+log_warn "sudo non installé — certaines actions seront limitées"
+SUDO_OK=0
+return
+fi
+
+if sudo -n true 2>/dev/null; then
+SUDO_OK=1
+log_debug "sudo : disponible sans mot de passe"
+else
+log_info "sudo : mot de passe requis"
+if [ "$DRY_RUN" -eq 1 ]; then
+SUDO_OK=0
+return
+fi
+printf "${C_OR}Valider sudo maintenant ?${C_RESET} [o/N] : "
+local rep
+read -r rep </dev/tty
+if [ "$rep" = "o" ] || [ "$rep" = "O" ]; then
+if sudo -v 2>/dev/null; then
+SUDO_OK=1
+log_debug "sudo : validé"
+else
+SUDO_OK=0
+log_warn "sudo : échec validation"
+fi
+else
+SUDO_OK=0
+fi
+fi
+}
+
+# Wrapper sudo sécurisé
+safe_sudo() {
+if [ "$SUDO_OK" != "1" ]; then
+log_warn "sudo indisponible — ignoré : $*"
+return 1
+fi
+if [ "$DRY_RUN" -eq 1 ]; then
+log_info "[DRY-RUN] sudo $*"
+return 0
+fi
+sudo "$@"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 10 — CONFIG JSON
+# ═══════════════════════════════════════════════════════════════════════════
+
+creer_config_defaut() {
+mkdir -p "$CONFIG_DIR" 2>/dev/null
+
+if [ -f "$CONFIG_FILE" ]; then
+log_debug "Config existante : $CONFIG_FILE"
+return
+fi
+
+cat > "$CONFIG_FILE" <<JSONEOF
+{
+"version": "$SCRIPT_VERSION",
+"auteur": "$SCRIPT_AUTEUR",
+"licence": "$SCRIPT_LICENCE",
+"port": $DEFAULT_PORT,
+"token": "$DEFAULT_TOKEN",
+"options": {
+"auto_refresh": true,
+"refresh_interval": 3,
+"max_logs_display": 100,
+"backup_before_clean": true,
+"backup_before_kernel": true,
+"auth_required": false,
+"log_level": "info"
+},
+"actions": {
+"clean_apt_cache": true,
+"clean_user_cache": true,
+"clean_trash": true,
+"clean_thumbnails": true,
+"clean_pip_cache": true,
+"clean_npm_cache": true,
+"clean_journal": true,
+"clean_old_kernels": true
+},
+"kernel": {
+"swappiness": 10,
+"vfs_cache_pressure": 50,
+"dirty_ratio": 15,
+"dirty_background_ratio": 5
+}
+}
+JSONEOF
+
+log_ok "Config créée : $CONFIG_FILE"
+}
+
+lire_config() {
+local key="$1"
+local defaut="${2:-}"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+printf '%s' "$defaut"
+return
+fi
+
+if command -v jq >/dev/null 2>&1; then
+local val
+val=$(jq -r ".$key // \"$defaut\"" "$CONFIG_FILE" 2>/dev/null)
+printf '%s' "${val:-$defaut}"
+elif command -v python3 >/dev/null 2>&1; then
+python3 -c "
+import json
+try:
+d = json.load(open('$CONFIG_FILE'))
+v = d
+for k in '$key'.split('.'):
+v = v.get(k, '$defaut')
+print(v)
+except: print('$defaut')
+" 2>/dev/null
+else
+printf '%s' "$defaut"
+fi
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 11 — UTILITAIRES
+# ═══════════════════════════════════════════════════════════════════════════
+
+confirm() {
+local prompt="$1"
+local defaut="${2:-n}"
+
+if [ "$DRY_RUN" -eq 1 ]; then
+log_debug "[DRY-RUN] Confirmation auto : $prompt"
+return 0
+fi
+
+local rep
+if [ "$defaut" = "o" ] || [ "$defaut" = "O" ]; then
+printf "${C_OR}%s${C_RESET} [O/n] : " "$prompt"
+else
+printf "${C_OR}%s${C_RESET} [o/N] : " "$prompt"
+fi
+read -r rep </dev/tty
+rep="${rep:-$defaut}"
+[ "$rep" = "o" ] || [ "$rep" = "O" ] || [ "$rep" = "y" ] || [ "$rep" = "Y" ]
+}
+
+human_size() {
+local bytes="$1"
+if command -v numfmt >/dev/null 2>&1; then
+numfmt --to=iec-i --suffix=B "$bytes" 2>/dev/null || echo "$bytes B"
+else
+python3 -c "
+b = $bytes
+for u in ['B','Ki','Mi','Gi','Ti']:
+if b < 1024: print(f'{b:.1f}{u}'); break
+b /= 1024
+" 2>/dev/null || echo "$bytes B"
+}
+
+timer_start() {
+TIMER_START=$(date +%s%N 2>/dev/null || date +%s)
+export TIMER_START
+}
+
+timer_stop() {
+local end
+end=$(date +%s%N 2>/dev/null || date +%s)
+if [ ${#TIMER_START} -gt 10 ]; then
+echo "scale=2; ($end - $TIMER_START) / 1000000000" | bc -l 2>/dev/null || echo "0"
+else
+echo "$((end - TIMER_START))"
+fi
+}
+
+is_root() { [ "$EUID" -eq 0 ]; }
+is_command() { command -v "$1" >/dev/null 2>&1; }
+
+sep() {
+printf "${C_CYAN}═══════════════════════════════════════════════════════════════════════${C_RESET}\n"
+}
+
+sep_mini() {
+printf "${C_DIM}───────────────────────────────────────────────────────────────────────${C_RESET}\n"
+}
+
+title() {
+echo ""
+sep
+printf "${C_BOLD} %s${C_RESET}\n" "$1"
+sep
+echo ""
+}
+
+subtitle() {
+printf "${C_OR}▶ %s${C_RESET}\n" "$1"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 12 — BANNIÈRE
+# ═══════════════════════════════════════════════════════════════════════════
+
+banniere() {
+[ "$QUIET" -eq 1 ] && return
+clear
+cat <<'BANNIERE'
+╔═══════════════════════════════════════════════════════════════════════════╗
+║ ║
+║ ███╗ ██╗███████╗██╗ ██╗██╗ ██╗███████╗ ║
+║ ████╗ ██║██╔════╝╚██╗██╔╝██║ ██║██╔════╝ ║
+║ ██╔██╗ ██║█████╗ ╚███╔╝ ██║ ██║███████╗ ║
+║ ██║╚██╗██║██╔══╝ ██╔██╗ ██║ ██║╚════██║ ║
+║ ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║ ║
+║ ╚═╝ ╚═══╝╚══════╝╚═╝ ╚═╝ ╚═════╝ ╚══════╝ ║
+║ ║
+║ SYSTEM SUITE v4.0.0 — PROFESSIONAL EDITION ║
+║ ║
+║ Aissa Mohammedi (DGK) — NEXUS-OPEN-2.0 ║
+║ Protocole : Code Nametron 3 Lara ║
+║ ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+BANNIERE
+echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 13 — VÉRIFICATIONS SYSTÈME
+# ═══════════════════════════════════════════════════════════════════════════
+
+verifier_prerequis() {
+title "🔍 VÉRIFICATION DES PRÉREQUIS"
+
+log_info "Distribution : $DISTRO_NAME"
+log_info "Noyau : $(uname -r)"
+log_info "Architecture : $(uname -m)"
+log_info "Hostname : $(hostname)"
+
+# Python 3
+if is_command python3; then
+log_ok "Python 3 : $(python3 --version 2>&1 | head -1)"
+else
+log_fatal "Python 3 introuvable — requis"
+fi
+
+# Commandes critiques
+local critiques=("awk" "sed" "grep" "ps" "df" "free" "uptime")
+local manquantes_critiques=()
+
+for cmd in "${critiques[@]}"; do
+if ! is_command "$cmd"; then
+manquantes_critiques+=("$cmd")
+fi
+done
+
+if [ ${#manquantes_critiques[@]} -gt 0 ]; then
+log_fatal "Commandes critiques manquantes : ${manquantes_critiques[*]}"
+fi
+log_ok "Toutes les commandes critiques présentes"
+
+# Commandes optionnelles
+local optionnelles=("jq" "bc" "curl" "wget" "ss" "lscpu" "lspci" "lsblk")
+for cmd in "${optionnelles[@]}"; do
+if is_command "$cmd"; then
+log_debug "Optionnel présent : $cmd"
+else
+log_debug "Optionnel absent : $cmd"
+fi
+done
+
+# Espace disque
+local disk_pct
+disk_pct=$(df / 2>/dev/null | awk 'NR==2 {print $5}' | tr -d '%')
+if [ -n "$disk_pct" ] && [ "$disk_pct" -gt 90 ]; then
+log_warn "Disque à ${disk_pct}% — nettoyage urgent"
+else
+log_ok "Disque : ${disk_pct}% utilisé"
+fi
+
+# RAM
+local ram_pct
+ram_pct=$(free 2>/dev/null | awk '/^Mem:/ {printf "%.0f", $3/$2*100}')
+if [ -n "$ram_pct" ] && [ "$ram_pct" -gt 80 ]; then
+log_warn "RAM à ${ram_pct}% — optimisation recommandée"
+else
+log_ok "RAM : ${ram_pct}% utilisée"
+fi
+
+echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 14 — DÉTECTION MATÉRIELLE
+# ═══════════════════════════════════════════════════════════════════════════
+
+detecter_materiel() {
+title "🖥️ DÉTECTION MATÉRIELLE"
+
+# CPU
+subheading "CPU"
+if [ -f /proc/cpuinfo ]; then
+local cpu_model cpu_cores
+cpu_model=$(grep "model name" /proc/cpuinfo | head -1 | cut -d: -f2 | xargs)
+cpu_cores=$(nproc 2>/dev/null || echo "?")
+printf " Modèle : %s\n" "${cpu_model:-Inconnu}"
+printf " Cœurs : %s\n" "$cpu_cores"
+printf " Threads : %s\n" "$(grep -c "^processor" /proc/cpuinfo)"
+fi
+
+# RAM
+echo ""
+subheading "Mémoire"
+local ram_total ram_used ram_free swap_total
+ram_total=$(free -h 2>/dev/null | awk '/^Mem:/ {print $2}')
+ram_used=$(free -h 2>/dev/null | awk '/^Mem:/ {print $3}')
+ram_free=$(free -h 2>/dev/null | awk '/^Mem:/ {print $4}')
+swap_total=$(free -h 2>/dev/null | awk '/^Swap:/ {print $2}')
+printf " RAM totale : %s\n" "${ram_total:-?}"
+printf " RAM utilisée: %s\n" "${ram_used:-?}"
+printf " RAM libre : %s\n" "${ram_free:-?}"
+printf " Swap total : %s\n" "${swap_total:-?}"
+
+# Disque
+echo ""
+subheading "Disque"
+df -h 2>/dev/null | awk 'NR==1 || /^\/dev/' | while read -r line; do
+printf " %s\n" "$line"
+done
+
+# GPU (optionnel)
+echo ""
+subheading "GPU"
+if is_command lspci; then
+local gpu_info
+gpu_info=$(lspci 2>/dev/null | grep -i "vga\|3d\|display" | head -3)
+if [ -n "$gpu_info" ]; then
+echo "$gpu_info" | while read -r line; do
+printf " %s\n" "$line"
+done
+else
+printf " Aucun GPU détecté\n"
+fi
+else
+printf " lspci non disponible\n"
+fi
+
+# Carte réseau
+echo ""
+subheading "Réseau"
+if is_command ip; then
+ip -br link 2>/dev/null | while read -r line; do
+printf " %s\n" "$line"
+done
+fi
+
+echo ""
+}
+
+subheading() {
+printf "\n${C_BOLD}${C_OR} %s${C_RESET}\n" "$1"
+sep_mini
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 15 — BENCHMARKS
+# ═══════════════════════════════════════════════════════════════════════════
+
+BENCH_AVANT_RAM=0
+BENCH_AVANT_SWAP=0
+BENCH_AVANT_DISK=0
+BENCH_AVANT_LOAD=0
+BENCH_AVANT_PROCS=0
+BENCH_AVANT_TIME=0
+
+benchmark_avant() {
+title "📊 BENCHMARK — ÉTAT INITIAL"
+
+BENCH_AVANT_RAM=$(free 2>/dev/null | awk '/^Mem:/ {printf "%.1f", $3/$2*100}')
+BENCH_AVANT_SWAP=$(free 2>/dev/null | awk '/^Swap:/ {printf "%.1f", $3/$2*100}')
+BENCH_AVANT_DISK=$(df / 2>/dev/null | awk 'NR==2 {print $5}' | tr -d '%')
+BENCH_AVANT_LOAD=$(cat /proc/loadavg 2>/dev/null | awk '{print $1}')
+BENCH_AVANT_PROCS=$(ps aux 2>/dev/null | wc -l)
+BENCH_AVANT_TIME=$(date +%s)
+
+printf " ${C_CYAN}RAM utilisée${C_RESET} : ${C_YELLOW}%s%%${C_RESET}\n" "$BENCH_AVANT_RAM"
+printf " ${C_CYAN}Swap utilisé${C_RESET} : ${C_YELLOW}%s%%${C_RESET}\n" "$BENCH_AVANT_SWAP"
+printf " ${C_CYAN}Disque utilisé${C_RESET} : ${C_YELLOW}%s%%${C_RESET}\n" "$BENCH_AVANT_DISK"
+printf " ${C_CYAN}Load average${C_RESET} : %s\n" "$BENCH_AVANT_LOAD"
+printf " ${C_CYAN}Processus${C_RESET} : %s\n" "$BENCH_AVANT_PROCS"
+echo ""
+
+log_action "benchmark_avant : RAM=${BENCH_AVANT_RAM}% DISK=${BENCH_AVANT_DISK}%"
+}
+
+benchmark_apres() {
+title "📊 BENCHMARK — ÉTAT FINAL"
+
+local apres_ram apres_disk apres_procs apres_time
+apres_ram=$(free 2>/dev/null | awk '/^Mem:/ {printf "%.1f", $3/$2*100}')
+apres_disk=$(df / 2>/dev/null | awk 'NR==2 {print $5}' | tr -d '%')
+apres_procs=$(ps aux 2>/dev/null | wc -l)
+apres_time=$(date +%s)
+
+printf " ${C_CYAN}RAM utilisée${C_RESET} : %s%%\n" "$apres_ram"
+printf " ${C_CYAN}Disque utilisé${C_RESET} : %s%%\n" "$apres_disk"
+printf " ${C_CYAN}Processus${C_RESET} : %s\n" "$apres_procs"
+echo ""
+
+local gain_ram gain_disk duree
+gain_ram=$(python3 -c "print(f'{$BENCH_AVANT_RAM - $apres_ram:.1f}')" 2>/dev/null || echo "0")
+gain_disk=$((BENCH_AVANT_DISK - apres_disk))
+duree=$((apres_time - BENCH_AVANT_TIME))
+
+title "📈 GAINS MESURÉS"
+printf " ${C_CYAN}RAM${C_RESET} : ${C_YELLOW}%s%%${C_RESET} → %s%% (gain : ${C_GREEN}%s pts${C_RESET})\n" \
+"$BENCH_AVANT_RAM" "$apres_ram" "$gain_ram"
+printf " ${C_CYAN}Disque${C_RESET} : ${C_YELLOW}%s%%${C_RESET} → %s%% (gain : ${C_GREEN}%s pts${C_RESET})\n" \
+"$BENCH_AVANT_DISK" "$apres_disk" "$gain_disk"
+printf " ${C_CYAN}Durée${C_RESET} : ${C_GREEN}%ss${C_RESET}\n" "$duree"
+echo ""
+
+log_action "benchmark_apres : RAM=${apres_ram}% DISK=${apres_disk}% DUREE=${duree}s"
+}
+
+benchmark_cpu() {
+title "⚡ BENCHMARK CPU"
+
+if ! is_command bc && ! is_command python3; then
+log_warn "bc ou python3 requis pour benchmark CPU"
+return
+fi
+
+subheading "Test calcul intensif (100 000 itérations)"
+
+timer_start
+local resultat=0
+local i
+for i in $(seq 1 100000); do
+resultat=$((resultat + i % 7))
+done
+local duree
+duree=$(timer_stop)
+
+log_ok "Calcul terminé en ${duree}s (résultat=$resultat)"
+echo ""
+
+subheading "Test I/O disque"
+
+local test_file="$CACHE_DIR/disk_test_$$"
+mkdir -p "$CACHE_DIR"
+
+timer_start
+dd if=/dev/zero of="$test_file" bs=1M count=100 2>/dev/null
+local duree_ecriture
+duree_ecriture=$(timer_stop)
+
+timer_start
+dd if="$test_file" of=/dev/null bs=1M 2>/dev/null
+local duree_lecture
+duree_lecture=$(timer_stop)
+
+rm -f "$test_file"
+
+printf " Écriture 100 Mo : %ss\n" "$duree_ecriture"
+printf " Lecture 100 Mo : %ss\n" "$duree_lecture"
+echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 16 — AUDIT SÉCURITÉ
+# ═══════════════════════════════════════════════════════════════════════════
+
+audit_securite() {
+title "🔒 AUDIT SÉCURITÉ"
+
+local score=100
+local problemes=0
+
+# 1. Vérifier utilisateurs sans mot de passe
+subheading "Utilisateurs système"
+if [ -f /etc/shadow ]; then
+local users_sans_pass
+users_sans_pass=$(sudo awk -F: '($2==""){print $1}' /etc/shadow 2>/dev/null | head -5)
+if [ -n "$users_sans_pass" ]; then
+log_warn "Utilisateurs sans mot de passe : $users_sans_pass"
+score=$((score - 20))
+problemes=$((problemes + 1))
+else
+log_ok "Tous les utilisateurs ont un mot de passe"
+fi
+fi
+
+# 2. Vérifier SSH
+echo ""
+subheading "SSH"
+if [ -f /etc/ssh/sshd_config ]; then
+if grep -q "^PermitRootLogin yes" /etc/ssh/sshd_config 2>/dev/null; then
+log_warn "SSH : root login autorisé"
+score=$((score - 15))
+problemes=$((problemes + 1))
+else
+log_ok "SSH : root login désactivé"
+fi
+
+if grep -q "^PasswordAuthentication yes" /etc/ssh/sshd_config 2>/dev/null; then
+log_warn "SSH : authentification par mot de passe activée"
+score=$((score - 10))
+problemes=$((problemes + 1))
+fi
+else
+log_ok "SSH non installé"
+fi
+
+# 3. Vérifier firewall
+echo ""
+subheading "Firewall"
+if is_command ufw; then
+if sudo ufw status 2>/dev/null | grep -q "Status: active"; then
+log_ok "UFW actif"
+else
+log_warn "UFW installé mais inactif"
+score=$((score - 10))
+problemes=$((problemes + 1))
+fi
+elif is_command firewall-cmd; then
+if sudo firewall-cmd --state 2>/dev/null | grep -q "running"; then
+log_ok "Firewalld actif"
+else
+log_warn "Firewalld inactif"
+score=$((score - 10))
+problemes=$((problemes + 1))
+fi
+else
+log_warn "Aucun firewall détecté"
+score=$((score - 10))
+problemes=$((problemes + 1))
+fi
+
+# 4. Vérifier mises à jour
+echo ""
+subheading "Mises à jour"
+case "$DISTRO_FAMILY" in
+debian)
+local updates
+updates=$(apt list --upgradable 2>/dev/null | grep -c upgradable || echo "0")
+if [ "$updates" -gt 0 ]; then
+log_warn "$updates paquets à mettre à jour"
+score=$((score - 5))
+problemes=$((problemes + 1))
+else
+log_ok "Système à jour"
+fi
+;;
+arch)
+log_info "Vérifier avec pacman -Syu manuellement"
+;;
+redhat)
+local updates
+updates=$(dnf check-update 2>/dev/null | grep -c "^[a-z]" || echo "0")
+if [ "$updates" -gt 0 ]; then
+log_warn "$updates paquets à mettre à jour"
+score=$((score - 5))
+problemes=$((problemes + 1))
+fi
+;;
+esac
+
+# 5. Vérifier ports ouverts
+echo ""
+subheading "Ports en écoute"
+if is_command ss; then
+local ports_ouverts
+ports_ouverts=$(ss -tlnp 2>/dev/null | grep LISTEN | wc -l)
+printf " %s ports en écoute\n" "$ports_ouverts"
+fi
+
+# Score final
+echo ""
+title "📊 SCORE SÉCURITÉ"
+
+if [ "$score" -ge 90 ]; then
+log_ok "Score : $score/100 — Excellent"
+elif [ "$score" -ge 70 ]; then
+log_warn "Score : $score/100 — Bon"
+elif [ "$score" -ge 50 ]; then
+log_warn "Score : $score/100 — Moyen ($problemes problèmes)"
+else
+log_error "Score : $score/100 — Faible ($problemes problèmes)"
+fi
+
+log_action "audit_securite : score=$score problemes=$problemes"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 17 — NETTOYAGE DISQUE
+# ═══════════════════════════════════════════════════════════════════════════
+
+action_clean() {
+title "🧹 NETTOYAGE DISQUE"
+
+local avant
+avant=$(df / 2>/dev/null | awk 'NR==2 {print $4}')
+
+if [ "$DRY_RUN" -eq 1 ]; then
+log_info "[DRY-RUN] Simulation du nettoyage"
+fi
+
+# 1. Cache APT
+case "$DISTRO_FAMILY" in
+debian)
+subheading "Cache APT"
+if safe_sudo apt clean; then
+log_ok "apt clean terminé"
+fi
+if safe_sudo apt autoclean; then
+log_ok "apt autoclean terminé"
+fi
+;;
+arch)
+subheading "Cache pacman"
+safe_sudo pacman -Sc --noconfirm 2>/dev/null && log_ok "pacman clean"
+;;
+redhat)
+subheading "Cache DNF"
+safe_sudo dnf clean all 2>/dev/null && log_ok "dnf clean"
+;;
+esac
+
+# 2. Autoremove
+if [ "$DISTRO_FAMILY" = "debian" ]; then
+echo ""
+subheading "Paquets orphelins"
+safe_sudo apt autoremove --purge -y 2>/dev/null | tail -3
+log_ok "Autoremove terminé"
+fi
+
+# 3. Journal systemd
+if is_command journalctl; then
+echo ""
+subheading "Journal systemd"
+safe_sudo journalctl --vacuum-size=100M 2>/dev/null
+log_ok "Journal réduit à 100M max"
+fi
+
+# 4. Caches utilisateur
+echo ""
+subheading "Caches utilisateur"
+
+local caches=(
+"$HOME/.cache"
+"$HOME/.local/share/Trash"
+"$HOME/.thumbnails"
+"$HOME/.cache/pip"
+"$HOME/.npm"
+"$HOME/.cargo/registry/cache"
+"$HOME/.gradle/caches"
+)
+
+for cache in "${caches[@]}"; do
+if [ -d "$cache" ]; then
+local taille
+taille=$(du -sh "$cache" 2>/dev/null | cut -f1)
+log_info "Suppression : $cache ($taille)"
+rm -rf "$cache"/* 2>/dev/null
+fi
+done
+log_ok "Caches utilisateur nettoyés"
+
+# 5. Résultat
+local apres
+apres=$(df / 2>/dev/null | awk 'NR==2 {print $4}')
+local gain_bytes=$((apres - avant))
+local gain_h
+gain_h=$(human_size "$gain_bytes")
+
+echo ""
+log_ok "Espace libéré : $gain_h"
+
+log_action "clean : gain=$gain_h"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 18 — OPTIMISATION NOYAU
+# ═══════════════════════════════════════════════════════════════════════════
+
+action_kernel() {
+title "⚙️ OPTIMISATION NOYAU"
+
+if [ "$SUDO_OK" != "1" ]; then
+log_warn "sudo requis — optimisation noyau ignorée"
+return
+fi
+
+subheading "Paramètres noyau"
+
+local params=(
+"vm.swappiness=10"
+"vm.vfs_cache_pressure=50"
+"vm.dirty_ratio=15"
+"vm.dirty_background_ratio=5"
+)
+
+for p in "${params[@]}"; do
+local key="${p%=*}"
+local val="${p#*=}"
+if safe_sudo sysctl -w "$p" >/dev/null 2>&1; then
+log_ok "sysctl $key=$val"
+fi
+done
+
+# Persistance
+echo ""
+subheading "Persistance"
+
+if [ "$DRY_RUN" -eq 0 ]; then
+safe_sudo tee /etc/sysctl.d/99-nexus-speedup.conf >/dev/null <<'SYSCTL'
+# NEXUS SPEEDUP — Optimisations noyau
+vm.swappiness=10
+vm.vfs_cache_pressure=50
+vm.dirty_ratio=15
+vm.dirty_background_ratio=5
+SYSCTL
+log_ok "Persistance : /etc/sysctl.d/99-nexus-speedup.conf"
+fi
+
+log_action "kernel : paramètres appliqués"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 19 — AUDIT SERVICES
+# ═══════════════════════════════════════════════════════════════════════════
+
+audit_services() {
+title "🔍 AUDIT SERVICES"
+
+if ! is_command systemctl; then
+log_warn "systemctl non disponible"
+return
+fi
+
+printf " %-28s %-12s %-12s\n" "Service" "Statut" "Mémoire"
+sep_mini
+
+local services=("snapd" "packagekit" "ModemManager" "cups-browsed"
+"avahi-daemon" "bluetooth" "whoopsie" "apport"
+"systemd-resolved" "NetworkManager" "wpa_supplicant"
+"cron" "atd" "rsyslog")
+
+for svc in "${services[@]}"; do
+if systemctl is-active --quiet "$svc" 2>/dev/null; then
+local mem
+mem=$(systemctl show "$svc" --property=MemoryCurrent 2>/dev/null | cut -d= -f2)
+if [ -n "$mem" ] && [ "$mem" != "[not set]" ]; then
+mem=$(human_size "$mem" 2>/dev/null || echo "?")
+else
+mem="N/A"
+fi
+printf " %-28s ${C_RED}%-12s${C_RESET} %s\n" "$svc" "actif" "$mem"
+else
+printf " %-28s ${C_GREEN}%-12s${C_RESET}\n" "$svc" "inactif"
+fi
+done
+
+echo ""
+log_info "Désactiver : sudo systemctl disable <service>"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 20 — ANALYSE RÉSEAU
+# ═══════════════════════════════════════════════════════════════════════════
+
+audit_reseau() {
+title "🌐 ANALYSE RÉSEAU"
+
+subheading "Interfaces"
+if is_command ip; then
+ip -br addr 2>/dev/null | while read -r line; do
+printf " %s\n" "$line"
+done
+fi
+
+echo ""
+subheading "Ports en écoute"
+if is_command ss; then
+ss -tlnp 2>/dev/null | head -15 | while read -r line; do
+printf " %s\n" "$line"
+done
+fi
+
+echo ""
+subheading "Connexions actives"
+if is_command ss; then
+local nb_etablies
+nb_etablies=$(ss -tn 2>/dev/null | grep -c ESTAB)
+printf " Connexions établies : %s\n" "$nb_etablies"
+fi
+
+echo ""
+subheading "DNS"
+if [ -f /etc/resolv.conf ]; then
+grep "nameserver" /etc/resolv.conf 2>/dev/null | while read -r line; do
+printf " %s\n" "$line"
+done
+fi
+
+echo ""
+subheading "Test connectivité"
+if is_command ping; then
+if ping -c 2 -W 2 8.8.8.8 >/dev/null 2>&1; then
+log_ok "Internet accessible"
+else
+log_warn "Pas d'accès Internet"
+fi
+fi
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 21 — BACKUP
+# ═══════════════════════════════════════════════════════════════════════════
+
+action_backup() {
+title "💾 BACKUP CONFIGURATIONS"
+
+local ts
+ts=$(date +%Y%m%d_%H%M%S)
+local backup_path="$BACKUP_DIR/backup_$ts"
+mkdir -p "$backup_path"
+
+local fichiers=(
+"/etc/fstab"
+"/etc/apt/sources.list"
+"/etc/sysctl.conf"
+"/etc/hosts"
+"$HOME/.bashrc"
+"$HOME/.profile"
+"$CONFIG_FILE"
+)
+
+for f in "${fichiers[@]}"; do
+if [ -f "$f" ]; then
+local dst="$backup_path/$(basename "$f")"
+if [[ "$f" == /etc/* ]]; then
+safe_sudo cp "$f" "$dst" 2>/dev/null
+else
+cp "$f" "$dst" 2>/dev/null
+fi
+[ -f "$dst" ] && log_ok "Sauvegardé : $f"
+fi
+done
+
+# Manifeste
+cat > "$backup_path/MANIFEST.txt" <<EOF
+NEXUS BACKUP
+============
+Date : $(date)
+Hostname : $(hostname)
+Kernel : $(uname -r)
+Distribution: $DISTRO_NAME
+Auteur : $SCRIPT_AUTEUR
+Version : $SCRIPT_VERSION
+Backup ID : $ts
+EOF
+
+log_ok "Backup : $backup_path"
+log_action "backup : $backup_path"
+
+# Rotation : garder 10 backups
+local count
+count=$(find "$BACKUP_DIR" -maxdepth 1 -type d -name "backup_*" 2>/dev/null | wc -l)
+if [ "$count" -gt 10 ]; then
+find "$BACKUP_DIR" -maxdepth 1 -type d -name "backup_*" 2>/dev/null | \
+sort | head -n -10 | xargs -r rm -rf
+log_info "Rotation backups : >10 supprimés"
+fi
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 22 — RAPPORT JSON
+# ═══════════════════════════════════════════════════════════════════════════
+
+action_report() {
+title "📄 GÉNÉRATION RAPPORT"
+
+mkdir -p "$REPORT_DIR"
+local ts
+ts=$(date +%Y%m%d_%H%M%S)
+local report="$REPORT_DIR/rapport_$ts.json"
+
+local ram_pct disk_pct load procs cpu_cores ram_total disk_total uptime_val kernel
+ram_pct=$(free 2>/dev/null | awk '/^Mem:/ {printf "%.1f", $3/$2*100}')
+disk_pct=$(df / 2>/dev/null | awk 'NR==2 {print $5}' | tr -d '%')
+load=$(cat /proc/loadavg 2>/dev/null | awk '{print $1}')
+procs=$(ps aux 2>/dev/null | wc -l)
+cpu_cores=$(nproc 2>/dev/null || echo "1")
+ram_total=$(free -h 2>/dev/null | awk '/^Mem:/ {print $2}')
+disk_total=$(df -h / 2>/dev/null | awk 'NR==2 {print $2}')
+uptime_val=$(uptime -p 2>/dev/null || uptime)
+kernel=$(uname -r)
+
+local erreurs_json warnings_json actions_json
+erreurs_json=$(printf '%s\n' "${RAPPORT_ERREURS[@]:-}" | \
+python3 -c "import sys,json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))" 2>/dev/null || echo "[]")
+warnings_json=$(printf '%s\n' "${RAPPORT_WARNINGS[@]:-}" | \
+python3 -c "import sys,json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))" 2>/dev/null || echo "[]")
+actions_json=$(printf '%s\n' "${RAPPORT_ACTIONS[@]:-}" | \
+python3 -c "import sys,json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))" 2>/dev/null || echo "[]")
+
+cat > "$report" <<JSONEOF
+{
+"version": "$SCRIPT_VERSION",
+"auteur": "$SCRIPT_AUTEUR",
+"protocole": "$SCRIPT_PROTOCOLE",
+"licence": "$SCRIPT_LICENCE",
+"timestamp": "$(date -Iseconds)",
+"hostname": "$(hostname)",
+"kernel": "$kernel",
+"distribution": {
+"name": "$DISTRO_NAME",
+"family": "$DISTRO_FAMILY",
+"id": "$DISTRO"
+},
+"system": {
+"cpu": {"cores": $cpu_cores, "load_avg": "$load"},
+"ram": {"total": "$ram_total", "percent_used": "$ram_pct"},
+"disk": {"total": "$disk_total", "percent_used": "$disk_pct"},
+"processes": $procs,
+"uptime": "$uptime_val"
+},
+"results": {
+"erreurs": $erreurs_json,
+"warnings": $warnings_json,
+"actions": $actions_json
+},
+"meta": {
+"dry_run": $([ "$DRY_RUN" -eq 1 ] && echo "true" || echo "false"),
+"sudo_ok": $([ "$SUDO_OK" -eq 1 ] && echo "true" || echo "false")
+}
+}
+JSONEOF
+
+log_ok "Rapport : $report"
+
+if [ "$JSON_OUTPUT" -eq 0 ]; then
+subheading "Aperçu"
+head -30 "$report"
+fi
+
+log_action "report : $report"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 23 — GÉNÉRATION DASHBOARD HTML
+# ═══════════════════════════════════════════════════════════════════════════
+
+generer_dashboard() {
+local fichier="$BASE_DIR/dashboard.html"
+mkdir -p "$BASE_DIR"
+
+cat > "$fichier" <<'HTMLEOF'
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NEXUS SYSTEM SUITE v4.0.0</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+--bg:#0a0a0f;--card:#14141c;--border:#252533;--text:#e8e8f0;--dim:#6b6b80;
+--or:#c8a45c;--cyan:#00d4ff;--rose:#ff6ec7;--violet:#9d4edd;
+--vert:#4ade80;--jaune:#fbbf24;--rouge:#f87171;
+--mono:'JetBrains Mono',ui-monospace,monospace;
+}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,system-ui,sans-serif;
+min-height:100vh;padding:20px;
+background-image:
+radial-gradient(ellipse at 15% 15%,rgba(200,164,92,.08),transparent 55%),
+radial-gradient(ellipse at 85% 85%,rgba(0,212,255,.06),transparent 55%)}
+.container{max-width:1400px;margin:0 auto}
+.header{text-align:center;padding:40px;margin-bottom:24px;
+background:linear-gradient(135deg,rgba(200,164,92,.08),rgba(0,212,255,.08));
+border:1px solid var(--border);border-radius:20px}
+.header h1{font-size:2.5rem;font-weight:900;letter-spacing:-1.5px;
+background:linear-gradient(135deg,#fff,var(--or),var(--cyan),var(--rose));
+background-size:200% 200%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+background-clip:text;animation:gradient 6s ease infinite;margin-bottom:12px}
+@keyframes gradient{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.header p{color:var(--dim);font-size:.95rem;margin-bottom:12px}
+.badge{display:inline-block;padding:6px 16px;margin:4px;
+background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.3);
+border-radius:20px;font-size:.75rem;color:var(--cyan);
+font-family:var(--mono);letter-spacing:1px}
+.badge.or{background:rgba(200,164,92,.1);border-color:rgba(200,164,92,.3);color:var(--or)}
+.badge.rose{background:rgba(255,110,199,.1);border-color:rgba(255,110,199,.3);color:var(--rose)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+gap:16px;margin-bottom:24px}
+.stat{background:var(--card);border:1px solid var(--border);
+border-radius:16px;padding:24px;position:relative;overflow:hidden;transition:all .3s}
+.stat::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;
+background:linear-gradient(90deg,var(--cyan),var(--or),var(--rose));
+transform:scaleX(0);transform-origin:left;transition:transform .3s}
+.stat:hover{transform:translateY(-4px);border-color:var(--or);
+box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.stat:hover::before{transform:scaleX(1)}
+.stat-icon{font-size:36px;margin-bottom:12px;display:block}
+.stat-label{color:var(--dim);font-size:.7rem;text-transform:uppercase;
+letter-spacing:2px;margin-bottom:8px;font-family:var(--mono)}
+.stat-value{font-size:2rem;font-weight:900;font-family:var(--mono);
+color:var(--or);line-height:1;margin-bottom:8px}
+.stat-detail{color:var(--dim);font-size:.78rem;font-family:var(--mono)}
+.progress{height:8px;background:#000;border-radius:4px;overflow:hidden;
+margin-top:12px;border:1px solid var(--border)}
+.progress-fill{height:100%;transition:width .5s ease;border-radius:4px}
+.progress-fill.green{background:linear-gradient(90deg,#4ade80,#22c55e)}
+.progress-fill.yellow{background:linear-gradient(90deg,#fbbf24,#f59e0b)}
+.progress-fill.red{background:linear-gradient(90deg,#f87171,#ef4444)}
+.card{background:var(--card);border:1px solid var(--border);
+border-radius:16px;padding:24px;margin-bottom:24px}
+.card h3{color:var(--cyan);font-size:.85rem;text-transform:uppercase;
+letter-spacing:2px;margin-bottom:16px;
+border-bottom:1px solid var(--border);padding-bottom:12px;
+display:flex;align-items:center;gap:10px}
+.card h3 .pill{background:rgba(0,212,255,.15);color:var(--cyan);
+padding:2px 10px;border-radius:10px;font-size:.7rem;font-family:var(--mono)}
+.card h3 .pill.running{background:rgba(200,164,92,.2);color:var(--or);animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.btn{padding:16px 20px;border:none;border-radius:12px;
+font-size:.9rem;font-weight:700;cursor:pointer;transition:all .3s;
+display:flex;align-items:center;justify-content:center;gap:8px}
+.btn-primary{background:linear-gradient(135deg,var(--or),var(--rose));color:#fff;
+box-shadow:0 4px 20px rgba(200,164,92,.3)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(200,164,92,.5)}
+.btn-secondary{background:rgba(0,212,255,.1);color:var(--cyan);
+border:1px solid rgba(0,212,255,.3)}
+.btn-secondary:hover{background:rgba(0,212,255,.2);transform:translateY(-2px)}
+.btn-violet{background:rgba(157,78,221,.15);color:var(--violet);
+border:1px solid rgba(157,78,221,.3)}
+.btn-violet:hover{background:rgba(157,78,221,.25);transform:translateY(-2px)}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none!important}
+.btn-icon{font-size:1.3rem}
+.terminal{background:#000;border:1px solid var(--border);
+border-radius:12px;padding:20px;font-family:var(--mono);
+font-size:.85rem;line-height:1.7;color:var(--cyan);
+max-height:500px;overflow-y:auto;white-space:pre-wrap;
+word-break:break-word;min-height:200px}
+.terminal::-webkit-scrollbar{width:8px}
+.terminal::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+.terminal::-webkit-scrollbar-thumb:hover{background:var(--or)}
+.log-line{padding:2px 0}
+.log-ok{color:var(--vert)}
+.log-err{color:var(--rouge)}
+.log-warn{color:var(--jaune)}
+.log-info{color:var(--cyan)}
+.log-time{color:var(--dim);font-size:.75rem}
+.lang-table{width:100%;border-collapse:collapse;font-size:.85rem;font-family:var(--mono)}
+.lang-table th{background:rgba(0,212,255,.08);color:var(--cyan);
+padding:10px;text-align:left;font-size:.75rem;text-transform:uppercase;
+letter-spacing:1px;border-bottom:2px solid var(--border)}
+.lang-table td{padding:10px;border-bottom:1px solid var(--border)}
+.lang-table tr:hover td{background:rgba(200,164,92,.03)}
+.fast{color:var(--vert);font-weight:700}
+.mid{color:var(--jaune);font-weight:700}
+.slow{color:var(--rouge);font-weight:700}
+.footer{text-align:center;padding:30px;color:var(--dim);
+font-size:.8rem;margin-top:24px;border-top:1px solid var(--border);font-family:var(--mono)}
+.footer strong{color:var(--or)}
+.shortcut{position:fixed;bottom:20px;right:20px;background:var(--card);
+border:1px solid var(--border);border-radius:12px;padding:12px 16px;
+font-family:var(--mono);font-size:.75rem;color:var(--dim);z-index:100}
+.shortcut kbd{background:rgba(0,212,255,.1);color:var(--cyan);
+padding:2px 6px;border-radius:4px;margin:0 2px}
+@media(max-width:768px){.header h1{font-size:1.6rem}}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header">
+<h1>NEXUS SYSTEM SUITE</h1>
+<p>Dashboard Professionnel · Temps Réel</p>
+<span class="badge">v4.0.0</span>
+<span class="badge or">Aissa Mohammedi (DGK)</span>
+<span class="badge rose">Nametron 3 Lara</span>
+</div>
+<div class="stats">
+<div class="stat">
+<span class="stat-icon">🧠</span>
+<div class="stat-label">RAM utilisée</div>
+<div class="stat-value" id="ram-value">--</div>
+<div class="stat-detail" id="ram-detail">--</div>
+<div class="progress"><div class="progress-fill green" id="ram-bar" style="width:0%"></div></div>
+</div>
+<div class="stat">
+<span class="stat-icon">💾</span>
+<div class="stat-label">Disque utilisé</div>
+<div class="stat-value" id="disk-value">--</div>
+<div class="stat-detail" id="disk-detail">--</div>
+<div class="progress"><div class="progress-fill red" id="disk-bar" style="width:0%"></div></div>
+</div>
+<div class="stat">
+<span class="stat-icon">⚡</span>
+<div class="stat-label">CPU Load</div>
+<div class="stat-value" id="cpu-value">--</div>
+<div class="stat-detail" id="cpu-detail">--</div>
+<div class="progress"><div class="progress-fill yellow" id="cpu-bar" style="width:0%"></div></div>
+</div>
+<div class="stat">
+<span class="stat-icon">⏱️</span>
+<div class="stat-label">Uptime</div>
+<div class="stat-value" id="uptime-value">--</div>
+<div class="stat-detail" id="uptime-detail">--</div>
+</div>
+</div>
+<div class="card">
+<h3>🚀 Actions <span class="pill">disponibles</span></h3>
+<div class="actions">
+<button class="btn btn-primary" onclick="action('all')"><span class="btn-icon">⚡</span> Tout faire</button>
+<button class="btn btn-secondary" onclick="action('bench')"><span class="btn-icon">📊</span> Benchmark</button>
+<button class="btn btn-secondary" onclick="action('clean')"><span class="btn-icon">🧹</span> Nettoyer</button>
+<button class="btn btn-secondary" onclick="action('kernel')"><span class="btn-icon">⚙️</span> Noyau</button>
+<button class="btn btn-secondary" onclick="action('audit')"><span class="btn-icon">🔒</span> Audit</button>
+<button class="btn btn-secondary" onclick="action('services')"><span class="btn-icon">🔍</span> Services</button>
+<button class="btn btn-secondary" onclick="action('network')"><span class="btn-icon">🌐</span> Réseau</button>
+<button class="btn btn-secondary" onclick="action('hardware')"><span class="btn-icon">🖥️</span> Matériel</button>
+<button class="btn btn-violet" onclick="action('backup')"><span class="btn-icon">💾</span> Backup</button>
+<button class="btn btn-violet" onclick="action('report')"><span class="btn-icon">📄</span> Rapport</button>
+</div>
+</div>
+<div class="card">
+<h3>💻 Console <span class="pill" id="console-pill">idle</span></h3>
+<div class="terminal" id="terminal">
+<div class="log-line log-info"><span class="log-time">[--:--:--]</span> NEXUS SYSTEM SUITE v4.0.0 prêt.</div>
+</div>
+</div>
+<div class="footer">
+<strong>NEXUS SYSTEM SUITE v4.0.0</strong><br>
+Aissa Mohammedi (DGK) · Code Nametron 3 Lara<br>
+Québec · 2026 · Licence NEXUS-OPEN-2.0
+</div>
+</div>
+<div class="shortcut">
+<kbd>1</kbd>-<kbd>9</kbd> Actions · <kbd>R</kbd> Refresh
+</div>
+<script>
+function log(msg, type){
+type = type || 'info';
+const term = document.getElementById('terminal');
+const time = new Date().toLocaleTimeString('fr-FR');
+const div = document.createElement('div');
+div.className = 'log-line log-' + type;
+div.innerHTML = '<span class="log-time">[' + time + ']</span> ' + esc(msg);
+term.appendChild(div);
+term.scrollTop = term.scrollHeight;
+while (term.children.length > 200) term.removeChild(term.firstChild);
+}
+function esc(s){
+const d = document.createElement('div');
+d.textContent = String(s);
+return d.innerHTML;
+}
+let running = false;
+async function action(cmd){
+if (running) { log('Action en cours', 'warn'); return; }
+running = true;
+const pill = document.getElementById('console-pill');
+pill.textContent = 'running';
+pill.classList.add('running');
+log('▶ ' + cmd, 'info');
+document.querySelectorAll('.btn').forEach(b => b.disabled = true);
+try {
+const res = await fetch('/api/action?cmd=' + encodeURIComponent(cmd));
+const data = await res.json();
+if (data.output) {
+data.output.split('\n').forEach(line => {
+if (!line.trim()) return;
+let t = 'info';
+if (line.includes('[OK]')) t = 'ok';
+else if (line.includes('[ERR]')) t = 'err';
+else if (line.includes('[WARN]')) t = 'warn';
+log(line.trim(), t);
+});
+}
+log(data.success ? '✅ Terminé' : '❌ Échec', data.success ? 'ok' : 'err');
+pill.textContent = 'idle';
+pill.classList.remove('running');
+} catch(e) {
+log('Erreur : ' + e.message, 'err');
+pill.textContent = 'error';
+pill.classList.remove('running');
+} finally {
+document.querySelectorAll('.btn').forEach(b => b.disabled = false);
+running = false;
+refreshStats();
+}
+}
+async function refreshStats(){
+try {
+const res = await fetch('/api/stats');
+const d = await res.json();
+document.getElementById('ram-value').textContent = d.ram.percent + '%';
+document.getElementById('ram-detail').textContent = d.ram.used + ' / ' + d.ram.total;
+const rb = document.getElementById('ram-bar');
+rb.style.width = d.ram.percent + '%';
+rb.className = 'progress-fill ' + (d.ram.percent > 80 ? 'red' : d.ram.percent > 60 ? 'yellow' : 'green');
+document.getElementById('disk-value').textContent = d.disk.percent + '%';
+document.getElementById('disk-detail').textContent = d.disk.used + ' / ' + d.disk.total;
+const db = document.getElementById('disk-bar');
+db.style.width = d.disk.percent + '%';
+db.className = 'progress-fill ' + (d.disk.percent > 90 ? 'red' : d.disk.percent > 70 ? 'yellow' : 'green');
+document.getElementById('cpu-value').textContent = d.cpu.percent + '%';
+document.getElementById('cpu-detail').textContent = d.cpu.cores + ' cores · ' + d.cpu.load;
+const cb = document.getElementById('cpu-bar');
+cb.style.width = Math.min(d.cpu.percent, 100) + '%';
+cb.className = 'progress-fill ' + (d.cpu.percent > 80 ? 'red' : d.cpu.percent > 60 ? 'yellow' : 'green');
+document.getElementById('uptime-value').textContent = d.uptime;
+document.getElementById('uptime-detail').textContent = d.hostname;
+} catch(e) { console.error(e); }
+}
+document.addEventListener('keydown', e => {
+if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+const k = e.key.toLowerCase();
+if (k === '1') action('all');
+else if (k === '3') action('clean');
+else if (k === 'r') refreshStats();
+});
+refreshStats();
+setInterval(refreshStats, 3000);
+log('NEXUS SYSTEM SUITE v4.0.0 chargé', 'ok');
+</script>
+</body>
+</html>
+HTMLEOF
+
+echo "$fichier"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 24 — GÉNÉRATION SERVEUR PYTHON
+# ═══════════════════════════════════════════════════════════════════════════
+
+generer_serveur() {
+local fichier="$BASE_DIR/server.py"
+
+cat > "$fichier" <<'PYEOF'
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import os, sys, json, time, socket, shutil, subprocess, urllib.parse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from datetime import datetime
+
+BASE = os.path.expanduser("~/Documents/nexus_suite")
+HTML_FILE = os.path.join(BASE, "dashboard.html")
+SCRIPT = os.path.expanduser("~/nexus_suite.sh")
+
+def get_stats():
+stats = {"ram": {}, "disk": {}, "cpu": {}, "uptime": "", "hostname": ""}
+try:
+with open("/proc/meminfo") as f:
+d = {l.split(":")[0]: int(l.split(":")[1].split()[0]) for l in f if ":" in l}
+total = d["MemTotal"] / 1024 / 1024
+avail = d.get("MemAvailable", 0) / 1024 / 1024
+used = total - avail
+stats["ram"] = {"total": f"{total:.1f} Gi", "used": f"{used:.1f} Gi",
+"percent": round(used / total * 100, 1)}
+except:
+stats["ram"] = {"total": "?", "used": "?", "percent": 0}
+try:
+d = shutil.disk_usage("/")
+total = d.total / 1024**3
+used = d.used / 1024**3
+stats["disk"] = {"total": f"{total:.1f} G", "used": f"{used:.1f} G",
+"percent": round(used / total * 100, 1)}
+except:
+stats["disk"] = {"total": "?", "used": "?", "percent": 0}
+try:
+with open("/proc/loadavg") as f:
+load = float(f.read().split()[0])
+cores = os.cpu_count() or 1
+stats["cpu"] = {"cores": cores, "load": round(load, 2),
+"percent": round(load / cores * 100, 1)}
+except:
+stats["cpu"] = {"cores": 1, "load": 0, "percent": 0}
+try:
+with open("/proc/uptime") as f:
+s = float(f.read().split()[0])
+stats["uptime"] = f"{int(s//86400)}j {int((s%86400)//3600)}h {int((s%3600)//60)}m"
+except:
+stats["uptime"] = "?"
+stats["hostname"] = socket.gethostname()
+return stats
+
+def run_action(cmd):
+allowed = ["all", "bench", "clean", "kernel", "audit",
+"services", "network", "hardware", "backup", "report"]
+if cmd not in allowed:
+return {"success": False, "output": "Action non autorisee : " + cmd}
+try:
+start = time.time()
+r = subprocess.run(["bash", SCRIPT, cmd],
+capture_output=True, text=True, timeout=600)
+return {"success": r.returncode == 0,
+"output": r.stdout + "\n" + r.stderr,
+"duration": round(time.time() - start, 2)}
+except subprocess.TimeoutExpired:
+return {"success": False, "output": "Timeout 10 min"}
+except Exception as e:
+return {"success": False, "output": "Erreur : " + str(e)}
+
+class Handler(BaseHTTPRequestHandler):
+def log_message(self, *a):
+pass
+
+def _send(self, code, body, ctype="text/html; charset=utf-8"):
+if isinstance(body, str):
+body = body.encode()
+try:
+self.send_response(code)
+self.send_header("Content-Type", ctype)
+self.send_header("Content-Length", str(len(body)))
+self.send_header("Access-Control-Allow-Origin", "*")
+self.end_headers()
+self.wfile.write(body)
+except:
+pass
+
+def _json(self, data, status=200):
+self._send(status, json.dumps(data, ensure_ascii=False),
+"application/json; charset=utf-8")
+
+def do_GET(self):
+p = urllib.parse.urlparse(self.path)
+path = p.path
+qs = urllib.parse.parse_qs(p.query)
+
+if path in ("/", "/index.html"):
+try:
+with open(HTML_FILE, "rb") as f:
+self._send(200, f.read())
+except:
+self._send(404, "Dashboard introuvable")
+elif path == "/api/stats":
+self._json(get_stats())
+elif path == "/api/action":
+cmd = qs.get("cmd", [""])[0]
+self._json(run_action(cmd))
+elif path == "/health":
+self._json({"status": "ok"})
+elif path == "/api/version":
+self._json({"version": "4.0.0", "author": "Aissa Mohammedi (DGK)"})
+else:
+self._send(404, "404")
+
+def main():
+port = int(sys.argv[1]) if len(sys.argv) > 1 else 9999
+local_ip = "127.0.0.1"
+try:
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.settimeout(2)
+s.connect(("8.8.8.8", 80))
+local_ip = s.getsockname()[0]
+s.close()
+except:
+pass
+
+print("")
+print("=====================================================")
+print(" NEXUS SYSTEM SUITE v4.0.0 - SERVEUR ACTIF")
+print("=====================================================")
+print("")
+print(" Local : http://localhost:" + str(port) + "/")
+print(" Reseau : http://" + local_ip + ":" + str(port) + "/")
+print(" Stats : http://localhost:" + str(port) + "/api/stats")
+print("")
+print(" Ctrl+C pour arreter")
+print("")
+
+try:
+server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+server.daemon_threads = True
+server.serve_forever()
+except KeyboardInterrupt:
+print("")
+print("Arrete.")
+except OSError as e:
+print("Erreur port " + str(port) + " : " + str(e))
+sys.exit(1)
+
+if __name__ == "__main__":
+main()
+PYEOF
+
+chmod +x "$fichier"
+log_debug "Serveur généré : $fichier"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 25 — DASHBOARD WEB
+# ═══════════════════════════════════════════════════════════════════════════
+
+trouver_port_libre() {
+local port_depart="$1"
+local p
+for p in $(seq "$port_depart" $((port_depart + MAX_PORT_SCAN))); do
+if ! ss -tuln 2>/dev/null | grep -q ":$p "; then
+echo "$p"
+return 0
+fi
+done
+echo "$port_depart"
+}
+
+ouvrir_navigateur() {
+local port="$1"
+if [ "$NO_BROWSER" -eq 1 ]; then
+return
+fi
+if is_command xdg-open; then
+(sleep 2 && xdg-open "http://localhost:$port/" >/dev/null 2>&1 &) 2>/dev/null
+elif is_command firefox; then
+(sleep 2 && firefox "http://localhost:$port/" >/dev/null 2>&1 &) 2>/dev/null
+fi
+}
+
+action_web() {
+title "🌐 DASHBOARD WEB"
+
+DASHBOARD_PORT=$(trouver_port_libre "$DASHBOARD_PORT")
+log_info "Port sélectionné : $DASHBOARD_PORT"
+
+subheading "Génération dashboard"
+generer_dashboard > /dev/null
+log_ok "dashboard.html généré"
+
+subheading "Génération serveur"
+generer_serveur
+log_ok "server.py généré"
+
+subheading "Lancement"
+ouvrir_navigateur "$DASHBOARD_PORT"
+
+export NEXUS_TOKEN="$DASHBOARD_TOKEN"
+python3 "$BASE_DIR/server.py" "$DASHBOARD_PORT"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 26 — INSTALLATION AUTO-DÉMARRAGE
+# ═══════════════════════════════════════════════════════════════════════════
+
+install_autostart() {
+title "🔧 AUTO-DÉMARRAGE"
+
+if ! is_command crontab; then
+log_error "crontab non disponible"
+return
+fi
+
+if crontab -l 2>/dev/null | grep -q "nexus_suite"; then
+log_info "Auto-démarrage déjà configuré"
+return
+fi
+
+local cron_entry="@reboot sleep 30 && bash $SCRIPT_PATH --no-browser web"
+(crontab -l 2>/dev/null; echo "$cron_entry") | crontab -
+
+if [ $? -eq 0 ]; then
+log_ok "Auto-démarrage installé"
+log_info "Le dashboard démarrera au boot sur port $DEFAULT_PORT"
+log_info "Désinstaller : crontab -e (retirer la ligne)"
+else
+log_error "Échec installation auto-démarrage"
+fi
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 27 — BILAN FINAL
+# ═══════════════════════════════════════════════════════════════════════════
+
+afficher_bilan() {
+echo ""
+title "📋 BILAN FINAL"
+
+printf " ${C_CYAN}Actions exécutées${C_RESET} : %d\n" "${#RAPPORT_ACTIONS[@]}"
+printf " ${C_YELLOW}Warnings${C_RESET} : %d\n" "${#RAPPORT_WARNINGS[@]}"
+printf " ${C_RED}Erreurs${C_RESET} : %d\n" "${#RAPPORT_ERREURS[@]}"
+echo ""
+
+if [ "${#RAPPORT_ACTIONS[@]}" -gt 0 ]; then
+subheading "Actions"
+local action
+for action in "${RAPPORT_ACTIONS[@]}"; do
+printf " ${C_GREEN}✓${C_RESET} %s\n" "$action"
+done
+fi
+
+if [ "${#RAPPORT_WARNINGS[@]}" -gt 0 ]; then
+echo ""
+subheading "Warnings"
+local warning
+for warning in "${RAPPORT_WARNINGS[@]}"; do
+printf " ${C_YELLOW}!${C_RESET} %s\n" "$warning"
+done
+fi
+
+if [ "${#RAPPORT_ERREURS[@]}" -gt 0 ]; then
+echo ""
+subheading "Erreurs"
+local erreur
+for erreur in "${RAPPORT_ERREURS[@]}"; do
+printf " ${C_RED}✗${C_RESET} %s\n" "$erreur"
+done
+fi
+
+echo ""
+if [ "${#RAPPORT_ERREURS[@]}" -eq 0 ]; then
+log_ok "Aucune erreur détectée"
+fi
+echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 28 — ACTION GLOBALE
+# ═══════════════════════════════════════════════════════════════════════════
+
+action_all() {
+title "⚡ OPTIMISATION COMPLÈTE"
+
+if ! confirm "Lancer l'optimisation complète ?"; then
+log_info "Annulé"
+return
+fi
+
+benchmark_avant
+action_backup
+action_clean
+action_kernel
+benchmark_apres
+action_report
+
+log_ok "Optimisation complète terminée"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 29 — MENU INTERACTIF
+# ═══════════════════════════════════════════════════════════════════════════
+
+menu_interactif() {
+while true; do
+echo ""
+printf "${C_BOLD}${C_OR} Que veux-tu faire ?${C_RESET}\n"
+echo ""
+printf " ${C_CYAN}[1]${C_RESET} ⚡ ${C_BOLD}Tout optimiser${C_RESET}\n"
+printf " ${C_CYAN}[2]${C_RESET} 📊 Benchmark complet\n"
+printf " ${C_CYAN}[3]${C_RESET} 🧹 Nettoyer le disque\n"
+printf " ${C_CYAN}[4]${C_RESET} ⚙️ Optimiser le noyau\n"
+printf " ${C_CYAN}[5]${C_RESET} 🔒 Audit sécurité\n"
+printf " ${C_CYAN}[6]${C_RESET} 🔍 Audit services\n"
+printf " ${C_CYAN}[7]${C_RESET} 🌐 Analyse réseau\n"
+printf " ${C_CYAN}[8]${C_RESET} 🖥️ Détection matérielle\n"
+printf " ${C_CYAN}[9]${C_RESET} 💾 Backup configurations\n"
+printf " ${C_CYAN}[10]${C_RESET} 📄 Générer rapport JSON\n"
+printf " ${C_CYAN}[11]${C_RESET} 🌐 Lancer le Dashboard Web\n"
+printf " ${C_CYAN}[12]${C_RESET} 🔧 Installer auto-démarrage\n"
+printf " ${C_CYAN}[13]${C_RESET} 📋 Voir le bilan\n"
+printf " ${C_CYAN}[0]${C_RESET} ❌ Quitter\n"
+echo ""
+printf " ${C_BOLD}Choix${C_RESET} : "
+local choix
+read -r choix </dev/tty
+log_debug "Choix menu : $choix"
+
+case "$choix" in
+1) action_all ;;
+2) benchmark_avant; benchmark_cpu; benchmark_apres ;;
+3) action_clean ;;
+4) action_kernel ;;
+5) audit_securite ;;
+6) audit_services ;;
+7) audit_reseau ;;
+8) detecter_materiel ;;
+9) action_backup ;;
+10) action_report ;;
+11) action_web ;;
+12) install_autostart ;;
+13) afficher_bilan ;;
+0|q|quit|exit)
+echo ""
+afficher_bilan
+log_ok "Au revoir."
+exit 0
+;;
+"")
+# Entrée vide : redessiner
+;;
+*)
+log_warn "Choix invalide : '$choix'"
+;;
+esac
+
+echo ""
+printf " ${C_DIM}Appuie sur Entrée pour continuer...${C_RESET}"
+read -r </dev/tty
+banniere
+done
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 30 — AIDE
+# ═══════════════════════════════════════════════════════════════════════════
+
+usage() {
+cat <<USAGE
+${C_BOLD}NEXUS SYSTEM SUITE v${SCRIPT_VERSION}${C_RESET}
+${C_DIM}$SCRIPT_AUTEUR — $SCRIPT_PROTOCOLE${C_RESET}
+
+${C_OR}USAGE${C_RESET}
+nexus_suite.sh [OPTIONS] [COMMANDE]
+
+${C_OR}OPTIONS${C_RESET}
+-h, --help Afficher cette aide
+-v, --version Afficher la version
+-p, --port PORT Port du dashboard (defaut: $DEFAULT_PORT)
+-t, --token TOKEN Token d'authentification
+--no-browser Ne pas ouvrir le navigateur
+--no-color Desactiver les couleurs
+--json Sortie JSON
+-q, --quiet Mode silencieux
+-d, --debug Mode debug (trace bash)
+--dry-run Mode simulation (ne rien modifier)
+--install Installer auto-demarrage
+
+${C_OR}COMMANDES${C_RESET}
+all Tout optimiser (backup + clean + kernel + report)
+bench Benchmark CPU + I/O
+clean Nettoyage disque
+kernel Optimisation noyau
+audit Audit securite
+services Audit services systemd
+network Analyse reseau
+hardware Detection materiel
+backup Backup configurations
+report Rapport JSON
+web Lancer dashboard web
+
+${C_OR}EXEMPLES${C_RESET}
+nexus_suite.sh # Menu interactif
+nexus_suite.sh bench # Benchmark direct
+nexus_suite.sh --dry-run clean # Simuler un nettoyage
+nexus_suite.sh --port 8888 web # Dashboard sur port 8888
+nexus_suite.sh --debug all # Debug complet
+
+${C_OR}FICHIERS${C_RESET}
+Config : $CONFIG_FILE
+Logs : $LOG_DIR/
+Rapports : $REPORT_DIR/
+Backups : $BACKUP_DIR/
+
+USAGE
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 31 — PARSER CLI
+# ═══════════════════════════════════════════════════════════════════════════
+
+parser_args() {
+while [ $# -gt 0 ]; do
+case "$1" in
+-h|--help)
+usage
+exit 0
+;;
+-v|--version)
+echo "$SCRIPT_NAME v$SCRIPT_VERSION ($SCRIPT_BUILD)"
+exit 0
+;;
+-p|--port)
+shift
+[ -z "${1:-}" ] && log_fatal "Option --port requiert une valeur"
+DASHBOARD_PORT="$1"
+shift
+;;
+-t|--token)
+shift
+[ -z "${1:-}" ] && log_fatal "Option --token requiert une valeur"
+DASHBOARD_TOKEN="$1"
+shift
+;;
+--no-browser)
+NO_BROWSER=1
+shift
+;;
+--no-color)
+NO_COLOR=1
+detecter_couleurs
+shift
+;;
+--json)
+JSON_OUTPUT=1
+shift
+;;
+-q|--quiet)
+QUIET=1
+shift
+;;
+-d|--debug)
+VERBOSE=1
+LOG_LEVEL_THRESHOLD=$LOG_LEVEL_DEBUG
+set -x
+shift
+;;
+--dry-run)
+DRY_RUN=1
+log_warn "MODE DRY-RUN actif — aucune modification"
+shift
+;;
+--install)
+install_autostart
+exit 0
+;;
+all|bench|clean|kernel|audit|services|network|hardware|backup|report|web)
+COMMANDE="$1"
+shift
+;;
+-*)
+log_error "Option inconnue : $1"
+usage
+exit 1
+;;
+*)
+log_error "Commande inconnue : $1"
+usage
+exit 1
+;;
+esac
+done
+}
+
+executer_commande() {
+case "${COMMANDE:-}" in
+all) action_all ;;
+bench) benchmark_avant; benchmark_cpu; benchmark_apres ;;
+clean) action_clean ;;
+kernel) action_kernel ;;
+audit) audit_securite ;;
+services) audit_services ;;
+network) audit_reseau ;;
+hardware) detecter_materiel ;;
+backup) action_backup ;;
+report) action_report ;;
+web) action_web ;;
+"") menu_interactif ;;
+esac
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION 32 — POINT D'ENTRÉE
+# ═══════════════════════════════════════════════════════════════════════════
+
+main() {
+COMMANDE=""
+
+parser_args "$@"
+
+init_logger
+detecter_distribution
+
+if [ -n "$COMMANDE" ] || [ -n "${COMMANDE:-}" ]; then
+banniere
+log_info "Commande : $COMMANDE"
+fi
+
+verifier_sudo
+creer_config_defaut
+verifier_prerequis
+rotate_logs
+acquire_lock
+
+log_info "==========================================="
+log_info "NEXUS SYSTEM SUITE v$SCRIPT_VERSION"
+log_info "Distribution : $DISTRO_NAME"
+log_info "Kernel : $(uname -r)"
+log_info "sudo : $([ "$SUDO_OK" -eq 1 ] && echo "OK" || echo "NON")"
+log_info "dry-run : $([ "$DRY_RUN" -eq 1 ] && echo "OUI" || echo "NON")"
+log_info "==========================================="
+
+executer_commande
+
+release_lock
+
+if [ -n "$COMMANDE" ]; then
+afficher_bilan
+fi
+}
+
+main "$@"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FIN DU SCRIPT
+# ═══════════════════════════════════════════════════════════════════════════
